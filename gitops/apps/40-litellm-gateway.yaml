@@ -29,6 +29,16 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: ai-gateway
+  # The API server writes a status block into every volumeClaimTemplate
+  # ({"phase":"Pending"}). It can never exist in Git, so without this the
+  # StatefulSet reports OutOfSync on every refresh even though each sync
+  # applies cleanly — and a permanently-OutOfSync child app stalls the root
+  # app's wave ordering.
+  ignoreDifferences:
+    - group: apps
+      kind: StatefulSet
+      jqPathExpressions:
+        - '.spec.volumeClaimTemplates[]?.status'
   syncPolicy:
     automated: { prune: true, selfHeal: true }
     syncOptions:

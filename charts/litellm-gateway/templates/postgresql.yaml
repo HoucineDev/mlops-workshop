@@ -108,6 +108,10 @@ spec:
         name: data
       spec:
         accessModes: ["ReadWriteOnce"]
+        # Declared explicitly even though it is the default: the API server
+        # fills it in regardless, and a field present in live but absent from
+        # Git is a diff ArgoCD reports forever.
+        volumeMode: Filesystem
         {{- with .Values.postgresql.persistence.storageClass }}
         storageClassName: {{ . | quote }}
         {{- end }}
