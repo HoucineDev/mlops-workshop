@@ -29,16 +29,28 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: ai-gateway
-  # The API server writes a status block into every volumeClaimTemplate
-  # ({"phase":"Pending"}). It can never exist in Git, so without this the
-  # StatefulSet reports OutOfSync on every refresh even though each sync
-  # applies cleanly — and a permanently-OutOfSync child app stalls the root
-  # app's wave ordering.
+  # The API server rewrites volumeClaimTemplates on admission — it adds
+  # apiVersion, kind, volumeMode and a status block ({"phase":"Pending"}) — so
+  # the stored object never matches what Helm rendered. Every sync applied
+  # cleanly ("serverside-applied") and the StatefulSet went straight back to
+  # OutOfSync, which stalled the root app's wave ordering.
+  #
+  # Ignoring the whole block rather than picking off individual fields, because
+  # volumeClaimTemplates is IMMUTABLE after creation: ArgoCD could not act on a
+  # diff there even if it found a real one. Changing a volume claim means
+  # recreating the StatefulSet by hand:
+  #   kubectl delete statefulset <name> --cascade=orphan   # keeps the PVC
+  #
+  # Narrower attempts were tried and do NOT work — verified against the live
+  # controller, each still reporting OutOfSync:
+  #   .spec.volumeClaimTemplates[]?.status
+  #   .spec.volumeClaimTemplates[].status
+  #   /spec/volumeClaimTemplates/0/{status,apiVersion,kind}
   ignoreDifferences:
     - group: apps
       kind: StatefulSet
-      jqPathExpressions:
-        - '.spec.volumeClaimTemplates[]?.status'
+      jsonPointers:
+        - /spec/volumeClaimTemplates
   syncPolicy:
     automated: { prune: true, selfHeal: true }
     syncOptions:
