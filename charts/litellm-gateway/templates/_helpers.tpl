@@ -49,3 +49,18 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- required "masterKey.existingSecret is required when masterKey.create is false" .Values.masterKey.existingSecret -}}
 {{- end -}}
 {{- end -}}
+
+{{/*
+Selector labels for postgres.
+
+These MUST NOT overlap with litellm-gateway.selectorLabels. Reusing those plus
+an extra app.kubernetes.io/component label does not work: the proxy's Service
+and Deployment select on name+instance ONLY, so a postgres pod carrying those
+two labels is matched by both — the Service then load-balances HTTP requests
+onto the postgres port, and roughly half of all API calls fail. A distinct
+`name` is what actually separates them.
+*/}}
+{{- define "litellm-gateway.postgresqlSelectorLabels" -}}
+app.kubernetes.io/name: {{ include "litellm-gateway.name" . }}-postgresql
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end -}}

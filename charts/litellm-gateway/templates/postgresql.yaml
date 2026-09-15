@@ -35,8 +35,7 @@ spec:
       protocol: TCP
       name: postgresql
   selector:
-    {{- include "litellm-gateway.selectorLabels" . | nindent 4 }}
-    app.kubernetes.io/component: postgresql
+    {{- include "litellm-gateway.postgresqlSelectorLabels" . | nindent 4 }}
 ---
 # A StatefulSet, not a Deployment: the PVC belongs to this one database
 # instance, and a StatefulSet's volumeClaimTemplate binds it to the pod's
@@ -58,13 +57,11 @@ spec:
   replicas: 1
   selector:
     matchLabels:
-      {{- include "litellm-gateway.selectorLabels" . | nindent 6 }}
-      app.kubernetes.io/component: postgresql
+      {{- include "litellm-gateway.postgresqlSelectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "litellm-gateway.selectorLabels" . | nindent 8 }}
-        app.kubernetes.io/component: postgresql
+        {{- include "litellm-gateway.postgresqlSelectorLabels" . | nindent 8 }}
     spec:
       securityContext:
         # The alpine postgres image runs as uid 70. fsGroup makes the
