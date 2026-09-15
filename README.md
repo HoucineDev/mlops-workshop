@@ -100,7 +100,7 @@ make test
 | --- | --- |
 | `make status` | Sync/health per Application, plus the InferenceService |
 | `make sync` | Force a hard refresh of the root app |
-| `make ui` | Port-forward the ArgoCD UI to <https://localhost:8080> |
+| `make ui` | Port-forward the ArgoCD UI to <http://localhost:8080> (this ArgoCD runs `server.insecure=true`, so it is HTTP, not HTTPS) |
 | `make gateway` | Port-forward LiteLLM to <http://localhost:4000> |
 | `make test-predictor` | Hit the KServe predictor directly, bypassing LiteLLM |
 | `make publish` | Package both charts and push them to Docker Hub as OCI artifacts |

@@ -93,9 +93,12 @@ sync: ## Force ArgoCD to refresh and sync the root app now
 
 ##@ Access
 .PHONY: ui
-ui: ## Port-forward the ArgoCD UI to https://localhost:8080
-	@echo "https://localhost:8080  (user: admin, password: make argocd-password)"
-	kubectl port-forward -n $(ARGOCD_NS) svc/argocd-server 8080:443
+ui: ## Port-forward the ArgoCD UI to http://localhost:8080
+	@# This ArgoCD runs with server.insecure=true, so argocd-server serves plain
+	@# HTTP on its target port. Forwarding :443 and opening https:// sends a TLS
+	@# handshake to an HTTP listener, which the server resets. Use the http port.
+	@echo "http://localhost:8080  (user: admin, password: make argocd-password)"
+	kubectl port-forward -n $(ARGOCD_NS) svc/argocd-server 8080:80
 
 .PHONY: argocd-password
 argocd-password: ## Print the initial ArgoCD admin password

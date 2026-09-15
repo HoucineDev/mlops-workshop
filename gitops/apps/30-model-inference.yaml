@@ -32,6 +32,17 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: models
+  # KServe's defaulting webhook writes these into every InferenceService the
+  # moment it is admitted. They are absent from the chart, so without this the
+  # Application is permanently OutOfSync — which matters more than it looks:
+  # the Application health check in argocd-cm requires Synced AND Healthy, so a
+  # stuck wave-3 app blocks the root app from ever reaching wave 4.
+  ignoreDifferences:
+    - group: serving.kserve.io
+      kind: InferenceService
+      jsonPointers:
+        - /spec/predictor/model/name
+        - /spec/predictor/model/resources
   syncPolicy:
     automated: { prune: true, selfHeal: true }
     syncOptions:
