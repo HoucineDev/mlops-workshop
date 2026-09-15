@@ -304,3 +304,73 @@ never reach Healthy silently held an entire sync wave — the `deploymentMode`
 rename, the address-less Ingress, the hostPort rollout, and the stale retry. The
 Application health check requires Synced **and** Healthy, so "Progressing
 forever" is indistinguishable from "still working" until you read the diff.
+
+---
+
+## 13. Adding PostgreSQL: four bugs worth recording
+
+Enabling the Admin UI meant adding a database, and the database surfaced four
+distinct failures. Each is a general Kubernetes trap, not a LiteLLM quirk.
+
+### 13a. A sync-wave applies per resource, not per file
+
+The postgres StatefulSet was annotated `sync-wave: "-1"` so it starts before the
+proxy. Its Secret and Service, in the same template file, were left at the
+default wave 0 — so ArgoCD created the StatefulSet *first*:
+
+```
+CreateContainerConfigError: secret "litellm-gateway-postgresql" not found
+```
+
+Everything a wave -1 workload needs must also be wave -1.
+
+### 13b. The container OOMKills before it can log anything
+
+With `DATABASE_URL` set, the proxy generates a Prisma client and runs a schema
+migration before serving. That startup peak blew the 1Gi limit that was fine for
+config-only mode. The pod produced **no logs at all** and simply restarted; the
+cause was only visible in `lastState`:
+
+```
+{"terminated":{"exitCode":137,"reason":"OOMKilled"}}
+```
+
+An empty log plus a restart loop means read `lastState` before anything else.
+Now 768Mi request / 2Gi limit.
+
+### 13c. Two proxy pods will not fit during a rollout
+
+The default `maxSurge: 25%` runs two LiteLLM pods at once. With postgres now
+also resident, that starved the node badly enough that the kubelet and API server
+degraded — `kubectl` began failing with `net/http: TLS handshake timeout`.
+`maxSurge: 0` retires the old pod first. Same fix as ingress-nginx, different
+cause: there an exclusive hostPort, here memory.
+
+### 13d. A `component` label does not separate workloads
+
+The postgres pods were given `litellm-gateway.selectorLabels` plus
+`app.kubernetes.io/component: postgresql`. But the proxy's Service and Deployment
+select on **name + instance only**, so those two labels alone matched the
+database pod. The proxy Service ended up with two EndpointSlices:
+
+```
+litellm-gateway-272vw   [10.244.0.40]   <- the proxy
+litellm-gateway-gncst   [10.244.0.37]   <- postgres
+```
+
+Roughly half of every API request was load-balanced onto a port speaking the
+postgres wire protocol — `/ui` and `/key/generate` returned 503 and 000 while
+`kubectl get pods` showed 1/1 Ready and healthy. Adding a label a selector does
+not look at changes nothing; the fix is a distinct `app.kubernetes.io/name`.
+
+Note both selectors are **immutable**, so the StatefulSet had to be recreated.
+`kubectl delete statefulset --cascade=orphan` keeps the PVC and its data.
+
+### Verified working
+
+| Check | Result |
+| --- | --- |
+| `litellm.localtest.me/ui/` | HTTP 200 |
+| Virtual key created and persisted | `sk-YDBX…` |
+| Chat completion authenticated by that virtual key | ✅ |
+| `argocd.localtest.me` | HTTP 200 |
