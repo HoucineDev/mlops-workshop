@@ -50,6 +50,25 @@ kserve:
       name: tiny-llm           # the InferenceService name
       servedModel: smollm2-135m-instruct
 
+ingress:
+  # -- Expose the proxy through ingress-nginx. Requires the ingress-nginx
+  # Application (wave 0) to be Healthy; an Ingress submitted before its
+  # admission webhook is up is rejected.
+  enabled: true
+  className: nginx
+  # -- *.localtest.me resolves to 127.0.0.1 everywhere, so no /etc/hosts entry
+  # is needed to reach this from your Mac.
+  hosts:
+    - host: litellm.localtest.me
+      paths:
+        - path: /
+          pathType: Prefix
+  # -- Seconds nginx will wait on the upstream. A 135M model on CPU is fast,
+  # but anything larger will exceed nginx's 60s default mid-generation.
+  proxyTimeout: 600
+  annotations: {}
+  tls: []
+
 # -- Extra entries appended to model_list verbatim (e.g. a real OpenAI key).
 extraModels: []
 

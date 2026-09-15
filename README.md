@@ -94,6 +94,73 @@ make status
 make test
 ```
 
+## Reaching the interfaces
+
+There are two ways in, and which one works depends on how the kind cluster was
+created. Check with `make ingress-check`.
+
+### Ingress (one front door, hostname-routed)
+
+`ingress-nginx` runs at wave 0 and both UIs have an Ingress:
+
+| Host | Goes to |
+| --- | --- |
+| `argocd.localtest.me` | the ArgoCD UI |
+| `litellm.localtest.me` | the LiteLLM OpenAI API |
+
+`*.localtest.me` resolves to `127.0.0.1` from anywhere, so there is no
+`/etc/hosts` entry to add.
+
+**If the cluster maps host ports 80/443** (created from `kind-config.yaml`),
+these work directly:
+
+```
+http://argocd.localtest.me
+http://litellm.localtest.me/v1/models
+```
+
+**If it does not** — which is the case for a cluster made with a bare
+`kind create cluster` — nothing inside the cluster can bind your Mac's port 80,
+because Docker cannot add port mappings to a running container. Until the
+cluster is recreated, use one port-forward to the controller and keep the same
+hostnames:
+
+```bash
+make ingress
+# ArgoCD  -> http://argocd.localtest.me:8080
+# LiteLLM -> http://litellm.localtest.me:8080
+```
+
+`make cluster-recreate` rebuilds the cluster from `kind-config.yaml` with 80/443
+mapped. It is destructive — it deletes the cluster and ArgoCD with it — but
+every workload comes back from Git with `make bootstrap`.
+
+### Port-forward (no ingress involved)
+
+```bash
+make ui                 # ArgoCD  -> http://localhost:8080
+make argocd-password    # the admin password
+make gateway            # LiteLLM -> http://localhost:4000
+```
+
+Note the ArgoCD UI is **http**, not https. This install runs
+`server.insecure=true`, so `argocd-server` serves plain HTTP; sending it a TLS
+handshake gets the connection reset.
+
+### Calling LiteLLM
+
+```bash
+KEY=$(kubectl get secret -n ai-gateway litellm-gateway-masterkey \
+        -o jsonpath='{.data.masterkey}' | base64 -d)
+
+curl http://litellm.localtest.me:8080/v1/chat/completions \
+  -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"tiny-llm","messages":[{"role":"user","content":"Hello"}]}'
+```
+
+Any OpenAI client works against it — point `base_url` at the same address.
+
 ## Operating it
 
 | Command | What it does |

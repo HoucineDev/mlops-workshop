@@ -1,0 +1,36 @@
+# Ingress for the ArgoCD UI itself.
+#
+# *.localtest.me resolves to 127.0.0.1 from any machine, so this needs no
+# /etc/hosts entry.
+#
+# backend-protocol: HTTP is required. This ArgoCD runs with
+# server.insecure=true, so argocd-server serves plain HTTP on its container
+# port — nginx's default of speaking HTTPS to the backend would be reset.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: argocd-server
+  namespace: argocd
+  annotations:
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    # The ArgoCD CLI speaks gRPC; without a generous body size and timeouts,
+    # `argocd app sync` over the Ingress fails on larger manifests.
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: argocd.localtest.me
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: argocd-server
+                # Port 80 on this Service is plain HTTP. Port 443 is NOT a TLS
+                # listener — both point at the same insecure container port.
+                port:
+                  number: 80

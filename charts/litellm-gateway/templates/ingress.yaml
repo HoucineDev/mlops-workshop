@@ -1,0 +1,42 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "litellm-gateway.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "litellm-gateway.labels" . | nindent 4 }}
+  annotations:
+    # LLM responses stream and can take a while on CPU; nginx's 60s default
+    # would cut a long generation off mid-answer.
+    nginx.ingress.kubernetes.io/proxy-read-timeout: {{ .Values.ingress.proxyTimeout | quote }}
+    nginx.ingress.kubernetes.io/proxy-send-timeout: {{ .Values.ingress.proxyTimeout | quote }}
+    # Do not buffer the response, or streaming (stream: true) arrives all at
+    # once when the generation finishes instead of token by token.
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+    {{- with .Values.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- with .Values.ingress.tls }}
+  tls:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    {{- range .Values.ingress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ .path }}
+            pathType: {{ .pathType }}
+            backend:
+              service:
+                name: {{ include "litellm-gateway.fullname" $ }}
+                port:
+                  number: {{ $.Values.service.port }}
+          {{- end }}
+    {{- end }}
+{{- end }}

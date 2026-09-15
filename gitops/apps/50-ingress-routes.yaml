@@ -1,0 +1,37 @@
+# Wave 5 — Ingress objects that do not belong to any one chart.
+#
+# Currently just the ArgoCD UI's own Ingress. LiteLLM's Ingress lives in the
+# litellm-gateway chart, because it is templated from the same values that name
+# the Service.
+#
+# Last wave on purpose: an Ingress created before ingress-nginx's admission
+# webhook is running is rejected outright.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ingress-routes
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: mlops
+  source:
+    repoURL: https://github.com/HoucineDev/mlops-workshop.git
+    targetRevision: main
+    path: manifests
+    directory:
+      recurse: false
+      include: '*.yaml'
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff: { duration: 10s, factor: 2, maxDuration: 3m }

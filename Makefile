@@ -108,6 +108,26 @@ argocd-password: ## Print the initial ArgoCD admin password
 gateway: ## Port-forward LiteLLM to localhost:$(LITELLM_PORT)
 	kubectl port-forward -n $(GATEWAY_NS) svc/litellm-gateway $(LITELLM_PORT):$(LITELLM_PORT)
 
+.PHONY: ingress
+ingress: ## One front door for BOTH UIs on :8080 (use when host ports 80/443 are unmapped)
+	@echo "  ArgoCD  -> http://argocd.localtest.me:8080"
+	@echo "  LiteLLM -> http://litellm.localtest.me:8080"
+	@echo "  (*.localtest.me resolves to 127.0.0.1 — no /etc/hosts entry needed)"
+	kubectl port-forward -n ingress-nginx svc/ingress-nginx-controller 8080:80
+
+.PHONY: ingress-check
+ingress-check: ## Are host ports 80/443 mapped into the kind node?
+	@echo "kind node port mappings:"
+	@docker port $(CLUSTER)-control-plane || true
+	@echo
+	@if docker port $(CLUSTER)-control-plane 2>/dev/null | grep -q '^80/tcp'; then \
+	    echo "✅ port 80 is mapped — http://argocd.localtest.me works directly"; \
+	else \
+	    echo "❌ port 80 is NOT mapped — Ingress is unreachable from macOS."; \
+	    echo "   Either run 'make ingress' (port-forward), or recreate the"; \
+	    echo "   cluster with 'make cluster-recreate' to map 80/443."; \
+	fi
+
 ##@ Test
 .PHONY: test-predictor
 test-predictor: ## Hit the KServe predictor directly, bypassing LiteLLM
@@ -118,6 +138,21 @@ test-predictor: ## Hit the KServe predictor directly, bypassing LiteLLM
 .PHONY: test
 test: ## End-to-end chat completion through LiteLLM (run `make gateway` first)
 	@./scripts/smoke-test.sh
+
+##@ Cluster
+.PHONY: cluster-recreate
+cluster-recreate: ## DESTRUCTIVE. Recreate the kind cluster with host ports 80/443 mapped
+	@echo "This DELETES the kind cluster '$(CLUSTER)' and everything in it,"
+	@echo "including ArgoCD. You then reinstall ArgoCD and run 'make bootstrap',"
+	@echo "and ArgoCD rebuilds every workload from Git."
+	@printf "Type the cluster name to confirm: "; read ans; [ "$$ans" = "$(CLUSTER)" ] || { echo "aborted"; exit 1; }
+	kind delete cluster --name $(CLUSTER)
+	kind create cluster --config kind-config.yaml
+	helm repo add argo https://argoproj.github.io/argo-helm
+	helm repo update argo
+	helm upgrade --install argocd argo/argo-cd -n $(ARGOCD_NS) --create-namespace \
+	  --set configs.params."server\.insecure"=true --wait --timeout 8m
+	@echo "✅ cluster + ArgoCD rebuilt. Now run: make image-load && make bootstrap"
 
 ##@ Cleanup
 .PHONY: destroy
