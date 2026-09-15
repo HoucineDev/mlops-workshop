@@ -7,6 +7,11 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "litellm-gateway.labels" . | nindent 4 }}
+  annotations:
+    # Must share the StatefulSet's wave. Left at the default 0 it is created
+    # AFTER the wave -1 StatefulSet, and the pod dies with
+    # CreateContainerConfigError: secret "…-postgresql" not found.
+    argocd.argoproj.io/sync-wave: "-1"
 type: Opaque
 stringData:
   username: {{ .Values.postgresql.auth.username | quote }}
@@ -20,6 +25,8 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "litellm-gateway.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
 spec:
   type: ClusterIP
   ports:
