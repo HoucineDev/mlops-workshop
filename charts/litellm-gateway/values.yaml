@@ -111,13 +111,19 @@ proxyConfig:
   general_settings: {}
   router_settings: {}
 
+# -- Sized for DB mode. The 1Gi limit that was fine for the config-only setup
+# gets the pod OOMKilled (exit 137) during startup once DATABASE_URL is set:
+# the proxy runs a Prisma client generation and schema migration before it
+# serves anything, and that peak is well above its steady state.
+# LiteLLM's own guidance is ~1 CPU / 4Gi per worker at DB-connected steady
+# state; 2Gi is enough for one worker on a workshop cluster.
 resources:
   requests:
     cpu: "200m"
-    memory: "512Mi"
+    memory: "768Mi"
   limits:
     cpu: "1"
-    memory: "1Gi"
+    memory: "2Gi"
 
 # -- Deployment update strategy. maxSurge 0 means the old pod is retired before
 # the replacement starts, so only one LiteLLM process exists at a time.
