@@ -84,8 +84,27 @@ ServiceAccount. It also templates `model_list` from
 `kserve.inferenceServices`, so predictor URLs stay correct when an
 InferenceService is renamed — something a values-only wrapper cannot do.
 
-**Reversing it.** For virtual keys, budgets or spend logging, switch the
-Application to the upstream chart and set `db.deployStandalone: true`.
+**Revised 2026-09-15 — PostgreSQL added back.** The original write-up said
+dropping the database costs "virtual keys, budgets and spend tracking." That
+undersold it: it also disables the **Admin UI completely**. Every login at
+`/ui` fails with
+
+```
+Authentication Error, Not connected to DB!
+```
+
+because the UI has no user store to authenticate against. The API is unaffected,
+but anyone who opens the UI hits a wall with no obvious cause.
+
+The chart now ships an optional `postgresql` block (`enabled: true` by default):
+a single-replica StatefulSet with a PVC, and `DATABASE_URL` wired into the
+proxy, which runs its Prisma migration at startup. Costs ~256Mi. Set
+`postgresql.enabled: false` to go back to API-only — a legitimate choice if you
+never need the UI, as long as you know the UI goes with it.
+
+A StatefulSet rather than a Deployment because the PVC belongs to one database
+identity; a Deployment sharing a PVC could run two postgres processes against
+the same data directory during a rolling update.
 
 ---
 

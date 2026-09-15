@@ -147,6 +147,17 @@ Note the ArgoCD UI is **http**, not https. This install runs
 `server.insecure=true`, so `argocd-server` serves plain HTTP; sending it a TLS
 handshake gets the connection reset.
 
+### The LiteLLM Admin UI
+
+```
+http://litellm.localtest.me:8080/ui
+```
+
+Username `admin`, password is the **master key**. The UI needs the bundled
+PostgreSQL (`postgresql.enabled`, on by default); with it disabled every login
+fails with *"Authentication Error, Not connected to DB!"* while the API keeps
+working normally.
+
 ### Calling LiteLLM
 
 ```bash

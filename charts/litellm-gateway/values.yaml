@@ -50,6 +50,35 @@ kserve:
       name: tiny-llm           # the InferenceService name
       servedModel: smollm2-135m-instruct
 
+postgresql:
+  # -- LiteLLM's Admin UI, virtual API keys, per-key budgets and spend tracking
+  # all live in a database. With this off the OpenAI API still works exactly as
+  # before, but /ui refuses every login with
+  # "Authentication Error, Not connected to DB!" — the UI has no user store to
+  # check credentials against.
+  enabled: true
+  image:
+    repository: postgres
+    tag: "16-alpine"
+    pullPolicy: IfNotPresent
+  auth:
+    username: litellm
+    database: litellm
+    # -- Workshop-grade: this is in Git. For anything real, template it from a
+    # Secret managed by External Secrets or Sealed Secrets.
+    password: litellm-local-only
+  persistence:
+    size: 2Gi
+    # -- Empty uses the cluster default StorageClass (kind ships local-path).
+    storageClass: ""
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "1"
+      memory: "512Mi"
+
 ingress:
   # -- Expose the proxy through ingress-nginx. Requires the ingress-nginx
   # Application (wave 0) to be Healthy; an Ingress submitted before its
@@ -89,6 +118,14 @@ resources:
   limits:
     cpu: "1"
     memory: "1Gi"
+
+ui:
+  # -- Admin UI username. The password is the master key above.
+  username: admin
+
+# -- Seconds/attempts the proxy gets to start. On a cold start it waits for
+# postgres and runs a Prisma migration first, so this is deliberately generous.
+startupProbeFailureThreshold: 60
 
 # -- Extra env vars for the proxy container.
 env: []

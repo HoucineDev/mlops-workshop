@@ -1,0 +1,113 @@
+{{- if .Values.postgresql.enabled }}
+{{- $pgName := printf "%s-postgresql" (include "litellm-gateway.fullname" .) }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $pgName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "litellm-gateway.labels" . | nindent 4 }}
+type: Opaque
+stringData:
+  username: {{ .Values.postgresql.auth.username | quote }}
+  password: {{ .Values.postgresql.auth.password | quote }}
+  database: {{ .Values.postgresql.auth.database | quote }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $pgName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "litellm-gateway.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: 5432
+      targetPort: postgresql
+      protocol: TCP
+      name: postgresql
+  selector:
+    {{- include "litellm-gateway.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: postgresql
+---
+# A StatefulSet, not a Deployment: the PVC belongs to this one database
+# instance, and a StatefulSet's volumeClaimTemplate binds it to the pod's
+# identity. A Deployment with a shared PVC would let a rolling update run two
+# postgres processes against the same data directory.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $pgName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "litellm-gateway.labels" . | nindent 4 }}
+  annotations:
+    # The proxy runs its schema migration at startup and crash-loops until the
+    # database answers, so bring postgres up first.
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  serviceName: {{ $pgName }}
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "litellm-gateway.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: postgresql
+  template:
+    metadata:
+      labels:
+        {{- include "litellm-gateway.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: postgresql
+    spec:
+      securityContext:
+        # The alpine postgres image runs as uid 70. fsGroup makes the
+        # local-path volume writable by it without running as root.
+        runAsUser: 70
+        runAsGroup: 70
+        fsGroup: 70
+      containers:
+        - name: postgresql
+          image: "{{ .Values.postgresql.image.repository }}:{{ .Values.postgresql.image.tag }}"
+          imagePullPolicy: {{ .Values.postgresql.image.pullPolicy }}
+          ports:
+            - name: postgresql
+              containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              valueFrom: { secretKeyRef: { name: {{ $pgName }}, key: username } }
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ $pgName }}, key: password } }
+            - name: POSTGRES_DB
+              valueFrom: { secretKeyRef: { name: {{ $pgName }}, key: database } }
+            # The image refuses to initdb into a non-empty mount point, and
+            # local-path volumes are not empty (lost+found). A subdirectory
+            # sidesteps that.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          resources:
+            {{- toYaml .Values.postgresql.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "{{ .Values.postgresql.auth.username }}", "-d", "{{ .Values.postgresql.auth.database }}"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "{{ .Values.postgresql.auth.username }}", "-d", "{{ .Values.postgresql.auth.database }}"]
+            initialDelaySeconds: 30
+            periodSeconds: 20
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- with .Values.postgresql.persistence.storageClass }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.postgresql.persistence.size }}
+{{- end }}

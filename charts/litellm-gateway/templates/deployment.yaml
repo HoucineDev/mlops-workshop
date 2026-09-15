@@ -57,9 +57,18 @@ spec:
                 secretKeyRef:
                   name: {{ include "litellm-gateway.masterKeySecretName" . }}
                   key: {{ .Values.masterKey.existingSecretKey }}
-            # No DATABASE_URL is set on purpose: without one LiteLLM runs
-            # config-only. That drops virtual keys, budgets and spend logging,
-            # and in exchange drops PostgreSQL and its migration Job.
+            {{- if .Values.postgresql.enabled }}
+            # With DATABASE_URL present the proxy runs its Prisma schema
+            # migration at startup and serves the Admin UI at /ui. Without it
+            # the API still works, but every UI login fails with
+            # "Not connected to DB!".
+            - name: DATABASE_URL
+              value: {{ printf "postgresql://%s:%s@%s-postgresql.%s.svc.cluster.local:5432/%s" .Values.postgresql.auth.username .Values.postgresql.auth.password (include "litellm-gateway.fullname" .) .Release.Namespace .Values.postgresql.auth.database | quote }}
+            # The UI signs in with this username and the master key as the
+            # password.
+            - name: UI_USERNAME
+              value: {{ .Values.ui.username | quote }}
+            {{- end }}
             {{- with .Values.env }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -93,7 +102,9 @@ spec:
               path: /health/liveliness
               port: http
             periodSeconds: 5
-            failureThreshold: 36
+            # Generous: on a cold start the proxy waits for postgres, then runs
+            # a Prisma migration before it serves anything. 5s x 60 = 5 minutes.
+            failureThreshold: {{ .Values.startupProbeFailureThreshold }}
       volumes:
         - name: config
           configMap:
