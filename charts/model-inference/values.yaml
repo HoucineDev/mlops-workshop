@@ -8,11 +8,17 @@ inferenceService:
   # must change litellm-gateway's `kserve.serviceName` too.
   name: tiny-llm
 
-  # -- RawDeployment gives you a plain Deployment + Service + HPA. The
-  # alternative, Serverless, drags in Knative Serving AND Istio (~15 extra
-  # pods). On a single-node kind cluster with 7.6Gi that is not a trade worth
-  # making, and nothing in this workshop uses scale-to-zero.
-  deploymentMode: RawDeployment
+  # -- "Standard" gives you a plain Deployment + Service + HPA. The alternative,
+  # Serverless, drags in Knative Serving AND Istio (~15 extra pods). On a
+  # single-node kind cluster with 7.6Gi that is not a trade worth making, and
+  # nothing here uses scale-to-zero.
+  #
+  # KServe v0.20 renamed this mode from "RawDeployment" to "Standard". The old
+  # spelling still works, but the mutating webhook silently rewrites it to
+  # "Standard" — which leaves ArgoCD comparing RawDeployment (Git) against
+  # Standard (live) and reporting the Application OutOfSync forever. Write the
+  # canonical name so the diff is empty.
+  deploymentMode: Standard
 
   minReplicas: 1
   maxReplicas: 1

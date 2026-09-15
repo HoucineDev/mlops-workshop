@@ -143,3 +143,65 @@ is KServe's default `ingressDomain` being templated into the status field, and
 it is cosmetic here — `disableIngressCreation: true` means no Ingress or
 HTTPRoute is created and nothing resolves that name. The address that matters is
 the predictor Service, `tiny-llm-predictor.models.svc.cluster.local`.
+
+---
+
+## 10. `deploymentMode: Standard`, not `RawDeployment`
+
+**Symptom.** `model-inference` sat `OutOfSync` forever while reporting `Healthy`,
+and the root app stalled at wave 3 with *"waiting for healthy state of
+Application/model-inference"* — so wave 4 (`litellm-gateway`) was never created.
+
+**Cause.** KServe v0.20 renamed this deployment mode from `RawDeployment` to
+`Standard`. The old spelling still *works*, but the mutating webhook silently
+rewrites the annotation:
+
+```
+<     serving.kserve.io/deploymentMode: Standard      # live, after the webhook
+>     serving.kserve.io/deploymentMode: RawDeployment # Git
+```
+
+ArgoCD compared the two and reported a diff it could never close — each sync
+wrote `RawDeployment`, each admission rewrote it to `Standard`.
+
+This is worse than a cosmetic diff because of the Application health check in
+`argocd-cm`, which reports `Healthy` only when a child app is **Healthy AND
+Synced**. One permanently-OutOfSync child therefore blocks every later wave.
+
+**Fix.** Write `Standard` in the chart. Confirmed against the live webhook:
+
+```bash
+kubectl apply --server-side --dry-run=server -f isvc.yaml \
+  -o jsonpath='{.metadata.annotations.serving\.kserve\.io/deploymentMode}'
+# -> Standard
+```
+
+**The general lesson.** When a GitOps app will not converge, get the real diff
+before theorising — `argocd app diff <app> --core` reads it straight from the
+Kubernetes API and needs no port-forward or login:
+
+```bash
+kubectl config view --raw > /tmp/kc.yaml
+KUBECONFIG=/tmp/kc.yaml kubectl config set-context --current --namespace=argocd
+KUBECONFIG=/tmp/kc.yaml argocd app diff model-inference --core
+```
+
+An `ignoreDifferences` block aimed at the wrong fields was tried first and
+changed nothing, because it papered over a symptom that was never the cause.
+
+---
+
+## 11. `make ui` uses HTTP, not HTTPS
+
+This ArgoCD runs with `server.insecure = true` in `argocd-cmd-params-cm`, so
+`argocd-server` serves **plain HTTP**. Verified from inside the cluster:
+
+```
+http  -> argocd-server.argocd.svc:80    200
+https -> argocd-server.argocd.svc:443   000  (connection reset)
+http  -> argocd-server.argocd.svc:443   200
+```
+
+Both Service ports point at the same plain-HTTP container port 8080; the `:443`
+name is not a TLS listener. Forwarding `:443` and opening `https://` sends a TLS
+handshake to an HTTP listener, and the server resets the connection.
