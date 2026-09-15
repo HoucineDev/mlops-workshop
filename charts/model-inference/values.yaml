@@ -47,12 +47,22 @@ predictor:
   # credentials. Set e.g. s3://bucket/model to use object storage instead.
   storageUri: ""
 
+  # CPU limit is 1, not 2, and deliberately so. llama.cpp will use every core it
+  # is given while loading a model and while generating. With two model pods each
+  # allowed 2 cores on an 8-core node, a model load drove the node to 382% CPU
+  # and starved the control plane: ArgoCD's repo-server and application-controller
+  # both hit CrashLoopBackOff (11 restarts) because their liveness probes timed
+  # out, and kubectl started failing with "TLS handshake timeout".
+  #
+  # Nothing in the cluster reserves CPU for ArgoCD, so the only thing keeping the
+  # control plane alive is not letting the models take it. Keep LLAMA_ARG_THREADS
+  # at or below this limit.
   resources:
     requests:
-      cpu: "500m"
+      cpu: "250m"
       memory: "512Mi"
     limits:
-      cpu: "2"
+      cpu: "1"
       memory: "1Gi"
 
   # -- Seconds to allow for model load before the readiness probe is trusted.

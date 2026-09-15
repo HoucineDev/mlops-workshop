@@ -19,12 +19,14 @@ predictor:
 
   resources:
     requests:
-      cpu: "500m"
+      cpu: "250m"
       # Measured RSS is ~295Mi for a 0.5B model of this class, against ~118Mi
       # for SmolLM2-135M.
       memory: "768Mi"
     limits:
-      cpu: "2"
+      # Capped at 1 core for the same reason as the base values: two models each
+      # free to take 2 cores starved ArgoCD into a crash loop.
+      cpu: "1"
       memory: "1500Mi"
 
 servingRuntime:
