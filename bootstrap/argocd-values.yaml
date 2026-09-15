@@ -1,0 +1,85 @@
+# Helm values for the ArgoCD install itself.
+#
+# ArgoCD is the one thing that cannot be managed by ArgoCD, so it is installed
+# imperatively — once — with `make argocd-install`. Everything else comes from
+# Git afterwards.
+#
+# WHY THIS FILE EXISTS
+#
+# The argo-cd chart ships `resources: {}` for every component. A pod with no
+# requests and no limits is QoS class **BestEffort**, which is the first thing
+# the kubelet kills when a node comes under memory pressure.
+#
+# That is exactly what happened here. With two models running, the node hit
+# transient memory pressure and the kubelet killed the BestEffort pods first:
+# argocd-repo-server and argocd-application-controller were OOMKilled (exit 137)
+# into CrashLoopBackOff with 11+ restarts, while the model pods — which DO carry
+# requests, so they are Burstable — were untouched.
+#
+# The consequences are worse than they look: with repo-server down, no
+# Application can regenerate its manifests, so every app silently freezes at
+# whatever revision it last synced. The LiteLLM gateway sat pinned to an old
+# commit and never learned about the second model, which looked like a chart bug
+# rather than a dead control plane.
+#
+# Setting requests moves these pods to Burstable and puts the models ahead of
+# them in the kill order, which is the correct priority: a model pod restarting
+# is an inconvenience, a control plane restarting takes the cluster with it.
+
+configs:
+  params:
+    # This ArgoCD serves plain HTTP; TLS is not terminated in-cluster.
+    server.insecure: true
+
+controller:
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      memory: 1Gi
+
+repoServer:
+  resources:
+    requests:
+      cpu: 100m
+      # repo-server spikes while cloning a repo and running `helm template`,
+      # which is where it was being killed.
+      memory: 384Mi
+    limits:
+      memory: 1Gi
+
+server:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 192Mi
+    limits:
+      memory: 512Mi
+
+redis:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 96Mi
+    limits:
+      memory: 256Mi
+
+applicationSet:
+  resources:
+    requests:
+      cpu: 25m
+      memory: 96Mi
+    limits:
+      memory: 256Mi
+
+notifications:
+  resources:
+    requests:
+      cpu: 25m
+      memory: 96Mi
+    limits:
+      memory: 256Mi
+
+dex:
+  enabled: false

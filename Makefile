@@ -114,6 +114,20 @@ publish: ## Package charts and push them to Docker Hub as OCI artifacts
 	done
 
 ##@ GitOps
+.PHONY: argocd-install
+argocd-install: ## Install/upgrade ArgoCD itself from bootstrap/argocd-values.yaml
+	helm repo add argo https://argoproj.github.io/argo-helm
+	helm repo update argo
+	helm upgrade --install argocd argo/argo-cd -n $(ARGOCD_NS) --create-namespace \
+	  -f bootstrap/argocd-values.yaml --wait --timeout 10m
+	@echo "✅ ArgoCD installed with resource requests (Burstable, not BestEffort)"
+
+.PHONY: qos
+qos: ## Show the QoS class of every pod — BestEffort pods die first under pressure
+	@kubectl get pods -A -o custom-columns=\
+NS:.metadata.namespace,POD:.metadata.name,QOS:.status.qosClass \
+	  --sort-by=.status.qosClass | grep -vE 'kube-system' | head -30
+
 .PHONY: bootstrap
 bootstrap: ## Apply the AppProject + root app-of-apps (the only imperative step)
 	kubectl apply -f gitops/bootstrap/project.yaml
