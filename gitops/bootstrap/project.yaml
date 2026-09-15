@@ -32,6 +32,11 @@ spec:
       namespace: ai-gateway
     - server: https://kubernetes.default.svc
       namespace: argocd
+    # cert-manager puts its leader-election Role/RoleBinding in kube-system
+    # (leaderElection.namespace defaults there). Without this destination its
+    # sync fails with "namespace kube-system is not permitted in project".
+    - server: https://kubernetes.default.svc
+      namespace: kube-system
 
   # KServe and cert-manager both install CRDs, webhooks and ClusterRoles.
   clusterResourceWhitelist:
