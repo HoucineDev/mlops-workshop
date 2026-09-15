@@ -40,14 +40,26 @@ spec:
             ports:
               http: 80
               https: 443
-          # A hostPort is exclusive per node, and this cluster has one node. The
-          # chart's default RollingUpdate starts the replacement pod before
-          # retiring the old one, so the new pod sits Pending forever waiting
-          # for a port the old pod will not release until the new one is Ready.
-          # Recreate takes the old pod down first: a second of downtime on every
-          # values change, instead of a permanently stuck rollout.
+          # A hostPort is exclusive per node, and this cluster has one node. With
+          # the chart's default maxSurge of 25% the replacement pod is created
+          # before the old one is retired, so it sits Pending forever waiting
+          # for a port the old pod will not release until the new one is Ready:
+          #   0/1 nodes are available: 1 node(s) didn't have free ports
+          #
+          # maxSurge: 0 inverts that — the old pod goes first, then the new one
+          # takes the port. Costs a second of downtime per change.
+          #
+          # Note this keeps type: RollingUpdate rather than switching to
+          # Recreate. Recreate looks like the natural fix but cannot be applied
+          # here: server-side apply will not drop the defaulted
+          # spec.strategy.rollingUpdate block, which kube-controller-manager
+          # owns, and `type: Recreate` alongside it is invalid — so the change
+          # reports "serverside-applied" and silently never takes effect.
           updateStrategy:
-            type: Recreate
+            type: RollingUpdate
+            rollingUpdate:
+              maxSurge: 0
+              maxUnavailable: 1
           # NodePort rather than the chart's default LoadBalancer: kind has no
           # cloud provider, so a LoadBalancer Service would sit <pending> and
           # the Application would never report Healthy.
