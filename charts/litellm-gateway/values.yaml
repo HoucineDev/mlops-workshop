@@ -119,6 +119,21 @@ resources:
     cpu: "1"
     memory: "1Gi"
 
+# -- Deployment update strategy. maxSurge 0 means the old pod is retired before
+# the replacement starts, so only one LiteLLM process exists at a time.
+#
+# The default 25% surge runs two at once mid-rollout. Each asks for 512Mi and
+# can use up to 1Gi, and on this single 7.6Gi node — already carrying KServe,
+# the model, cert-manager, ingress-nginx and now postgres — that was enough to
+# starve the kubelet and API server: both pods restarted and kubectl began
+# failing with "TLS handshake timeout". Costs a few seconds of downtime per
+# rollout, which is the right trade here.
+updateStrategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxSurge: 0
+    maxUnavailable: 1
+
 ui:
   # -- Admin UI username. The password is the master key above.
   username: admin
