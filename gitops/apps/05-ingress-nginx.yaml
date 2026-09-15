@@ -50,11 +50,15 @@ spec:
           # takes the port. Costs a second of downtime per change.
           #
           # Note this keeps type: RollingUpdate rather than switching to
-          # Recreate. Recreate looks like the natural fix but cannot be applied
-          # here: server-side apply will not drop the defaulted
-          # spec.strategy.rollingUpdate block, which kube-controller-manager
-          # owns, and `type: Recreate` alongside it is invalid — so the change
-          # reports "serverside-applied" and silently never takes effect.
+          # Recreate. Recreate looks like the natural fix but the API server
+          # rejects it outright under server-side apply, because SSA keeps the
+          # defaulted rollingUpdate block that kube-controller-manager owns:
+          #
+          #   Deployment.apps "ingress-nginx-controller" is invalid:
+          #   spec.strategy.rollingUpdate: Forbidden: may not be specified
+          #   when strategy `type` is 'Recreate'
+          #
+          # maxSurge: 0 needs no field removal, so it applies cleanly.
           updateStrategy:
             type: RollingUpdate
             rollingUpdate:

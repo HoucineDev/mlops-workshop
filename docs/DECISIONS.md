@@ -205,3 +205,83 @@ http  -> argocd-server.argocd.svc:443   200
 Both Service ports point at the same plain-HTTP container port 8080; the `:443`
 name is not a TLS listener. Forwarding `:443` and opening `https://` sends a TLS
 handshake to an HTTP listener, and the server resets the connection.
+
+---
+
+## 12. Ingress on kind: two cluster shapes
+
+**The constraint.** A cluster created with a bare `kind create cluster` maps only
+the API server to the host:
+
+```
+$ docker port argocd-control-plane
+6443/tcp -> 127.0.0.1:53796
+```
+
+With no host mapping for 80/443, nothing inside the cluster can answer on your
+Mac's port 80, whatever the ingress controller is told. Docker cannot add port
+mappings to a running container, so the only real fix is recreating the cluster
+from `kind-config.yaml`.
+
+**The design.** One ingress-nginx config that works either way: `hostPort`
+enabled (so a cluster built from `kind-config.yaml` serves directly on :80) and
+`make ingress` port-forwarding the controller otherwise. The same hostnames —
+`argocd.localtest.me`, `litellm.localtest.me` — work in both, just on a
+different port.
+
+Two things deliberately *not* done:
+
+- **No `nodeSelector: ingress-ready=true`.** That label exists only on a cluster
+  built from `kind-config.yaml`; requiring it strands the controller in Pending
+  on the current one.
+- **Service type NodePort, not the chart default LoadBalancer.** kind has no
+  cloud provider, so a LoadBalancer Service stays `<pending>` and the
+  Application never reports Healthy.
+
+### 12a. `publishService` vs. Ingress ADDRESS
+
+ingress-nginx defaults to copying its Service's `loadBalancer` status onto every
+Ingress. A NodePort Service has none, so `kubectl get ingress` showed an empty
+ADDRESS — and **ArgoCD reports an address-less Ingress as Progressing forever**.
+`publishService.enabled: false` + `reportNodeInternalIp: true` publishes node
+IPs instead, and the Ingresses go Healthy.
+
+### 12b. `maxSurge: 0`, and why `Recreate` does not work
+
+`hostPort` is exclusive per node, and this cluster has one node. The chart's
+default `maxSurge: 25%` creates the replacement pod before retiring the old one,
+so it waits forever for a port the old pod will not release:
+
+```
+0/1 nodes are available: 1 node(s) didn't have free ports for the requested pod ports
+```
+
+`strategy.type: Recreate` is the obvious fix and is **rejected outright**:
+
+```
+Deployment.apps "ingress-nginx-controller" is invalid:
+spec.strategy.rollingUpdate: Forbidden: may not be specified when strategy `type` is 'Recreate'
+```
+
+Server-side apply keeps the defaulted `rollingUpdate` block, which
+`kube-controller-manager` owns and the applier cannot remove, and `Recreate`
+alongside it is invalid. `maxSurge: 0` requires removing no field, so it applies.
+
+### 12c. Terminating a stuck retry
+
+A failed sync retries with the **manifests captured when the operation started**.
+After fixing the values, ArgoCD still replayed the old `Recreate` manifest and
+kept failing — `argocd app manifests --core` showed the *correct* new render
+while the retry kept erroring on the old one. Deleting `/operation` does not
+help: the retry re-arms it. The way out is to terminate the operation:
+
+```bash
+argocd app terminate-op <app> --core
+argocd app sync <app> --core
+```
+
+**Recurring theme.** Four separate times in this build, one resource that could
+never reach Healthy silently held an entire sync wave — the `deploymentMode`
+rename, the address-less Ingress, the hostPort rollout, and the stale retry. The
+Application health check requires Synced **and** Healthy, so "Progressing
+forever" is indistinguishable from "still working" until you read the diff.
