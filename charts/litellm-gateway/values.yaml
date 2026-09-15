@@ -49,6 +49,11 @@ kserve:
     - alias: tiny-llm          # the name clients ask LiteLLM for
       name: tiny-llm           # the InferenceService name
       servedModel: smollm2-135m-instruct
+    # Second model, same gateway. Clients switch between them with the `model`
+    # field alone — nothing else about the request changes.
+    - alias: qwen3
+      name: qwen3
+      servedModel: qwen3-0.6b
 
 postgresql:
   # -- LiteLLM's Admin UI, virtual API keys, per-key budgets and spend tracking

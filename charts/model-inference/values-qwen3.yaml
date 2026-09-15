@@ -1,0 +1,59 @@
+# Qwen3-0.6B-Instruct — a second, more capable model alongside SmolLM2-135M.
+#
+# Layered ON TOP of values.yaml (the Application lists both files, in order), so
+# only the differences appear here.
+#
+# Why a second model at all: SmolLM2-135M is fast and tiny but wrong a lot. Asked
+# "what is 17 * 4? answer with just the number" it produced a rambling
+# non-answer; Qwen3-0.6B returns 68. It also answers "what is Kubernetes"
+# correctly, which SmolLM2 never did.
+
+inferenceService:
+  name: qwen3
+
+predictor:
+  # A DISTINCT modelFormat. Both runtimes are cluster-scoped with
+  # autoSelect: true, so if they advertised the same format, which runtime a new
+  # InferenceService picked would be arbitrary.
+  modelFormat: llamacpp-qwen3
+
+  resources:
+    requests:
+      cpu: "500m"
+      # Measured RSS is ~295Mi for a 0.5B model of this class, against ~118Mi
+      # for SmolLM2-135M.
+      memory: "768Mi"
+    limits:
+      cpu: "2"
+      memory: "1500Mi"
+
+servingRuntime:
+  name: llamacpp-qwen3
+  image:
+    repository: docker.io/elhou/tiny-llm-server
+    tag: "qwen3-0.6b-0.1.0"
+  modelAlias: qwen3-0.6b
+
+  env:
+    - name: LLAMA_ARG_CTX_SIZE
+      value: "2048"
+    - name: LLAMA_ARG_THREADS
+      value: "2"
+    - name: LLAMA_ARG_N_PARALLEL
+      value: "1"
+    # THE important setting for this model. Qwen3 is a reasoning model: left on,
+    # it emits a <think> block that llama.cpp strips into a separate
+    # `reasoning_content` field, and `message.content` — the only field an
+    # OpenAI client reads — comes back EMPTY once the token budget is spent
+    # thinking:
+    #
+    #   "finish_reason": "length",
+    #   "content": "",
+    #   "reasoning_content": "Okay, so I need to figure out what 17 multiplied
+    #                         by 4 is. Let me think about how to approach this…"
+    #
+    # On CPU that is also ruinously slow: ~3 tok/s means a few hundred tokens of
+    # reasoning before the first visible word. Off, the same prompts answer
+    # correctly and stop cleanly.
+    - name: LLAMA_ARG_REASONING
+      value: "off"

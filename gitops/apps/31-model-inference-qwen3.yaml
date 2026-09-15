@@ -1,0 +1,39 @@
+# Wave 3 — a second model on the same chart.
+#
+# The entire delta from the SmolLM2 deployment is values-qwen3.yaml. That is the
+# point of keeping model-inference generic: a new model is a values file and an
+# Application, not a new chart.
+#
+# Both value files are listed, in order — values.yaml supplies the defaults and
+# values-qwen3.yaml overrides only what differs.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: model-inference-qwen3
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: mlops
+  source:
+    repoURL: https://github.com/HoucineDev/mlops-workshop.git
+    targetRevision: main
+    path: charts/model-inference
+    helm:
+      releaseName: qwen3
+      valueFiles:
+        - values.yaml
+        - values-qwen3.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: models
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff: { duration: 15s, factor: 2, maxDuration: 5m }

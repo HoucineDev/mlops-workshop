@@ -374,3 +374,65 @@ Note both selectors are **immutable**, so the StatefulSet had to be recreated.
 | Virtual key created and persisted | `sk-YDBX…` |
 | Chat completion authenticated by that virtual key | ✅ |
 | `argocd.localtest.me` | HTTP 200 |
+
+---
+
+## 14. A second model: Qwen3-0.6B, and why reasoning must be off
+
+Adding a model is a values file plus an Application — no new chart. That was the
+design goal of `model-inference`, and this is the proof.
+
+### Choosing it
+
+Candidates were checked against HuggingFace for real (URL live, size, sha256
+from `x-linked-etag`) and the finalist was benchmarked rather than assumed:
+
+| Model | Size | `17 * 4` | "what is Kubernetes" |
+| --- | --- | --- | --- |
+| SmolLM2-135M (incumbent) | 105 MB | rambles, no answer | wrong |
+| Qwen2.5-0.5B | 379 MB | 68 | correct |
+| **Qwen3-0.6B** | 378 MB | 68 | correct |
+
+Measured RSS: SmolLM2 118Mi, a 0.5B-class model ~295Mi. Both sit inside a 1Gi
+limit; the Qwen values ask for 768Mi/1500Mi.
+
+### The trap: Qwen3 returns empty content by default
+
+Qwen3 is a reasoning model. llama.cpp extracts its `<think>` block into
+`message.reasoning_content`, leaving `message.content` — the only field an
+OpenAI client reads — **empty** when the token budget is consumed thinking:
+
+```json
+{ "finish_reason": "length",
+  "content": "",
+  "reasoning_content": "Okay, so I need to figure out what 17 multiplied by 4 is.
+                        Let me think about how to approach this…",
+  "usage": { "completion_tokens": 80 } }
+```
+
+A short first test masked this — the reasoning happened to fit inside
+`max_tokens: 200`, which looked like clean output and led to the wrong initial
+conclusion that thinking was off. Only a tighter budget exposed it.
+
+On CPU it is also impractical: ~3 tok/s means hundreds of tokens of reasoning
+before the first visible word.
+
+**Fix:** `LLAMA_ARG_REASONING=off` in the runtime env. With it, the same prompts
+answer correctly and stop cleanly (`finish_reason: stop`, zero reasoning tokens).
+The env var is the whole reason the runtime keeps its settings in `LLAMA_ARG_*` —
+no rebuild needed to change them.
+
+### Distinct modelFormat per runtime
+
+Both ClusterServingRuntimes are cluster-scoped with `autoSelect: true`. Had they
+advertised the same `modelFormat`, which one a new InferenceService picked would
+be arbitrary. Qwen3's runtime uses `llamacpp-qwen3`.
+
+### Result
+
+One gateway, two models, switched by the `model` field alone:
+
+```
+tiny-llm -> http://tiny-llm-predictor.models.svc.cluster.local/v1
+qwen3    -> http://qwen3-predictor.models.svc.cluster.local/v1
+```
