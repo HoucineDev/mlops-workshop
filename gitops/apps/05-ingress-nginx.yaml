@@ -45,6 +45,15 @@ spec:
           # the Application would never report Healthy.
           service:
             type: NodePort
+          # By default the controller copies its Service's loadBalancer status
+          # into every Ingress's status field. A NodePort Service has no
+          # loadBalancer status, so every Ingress would keep an empty ADDRESS —
+          # and ArgoCD reports an Ingress with no address as Progressing
+          # forever, which would leave ingress-routes permanently un-Healthy.
+          # Publishing node IPs instead gives each Ingress a real address.
+          publishService:
+            enabled: false
+          reportNodeInternalIp: true
           # argocd-server runs with server.insecure=true and serves plain HTTP,
           # so nothing here should try to redirect to HTTPS.
           config:
