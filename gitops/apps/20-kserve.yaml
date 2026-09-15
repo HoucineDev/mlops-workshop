@@ -1,0 +1,64 @@
+# Wave 2 — the KServe controller ("standard mode").
+#
+# The two values that matter are deploymentMode and disableIngressCreation:
+#
+#   deploymentMode: RawDeployment
+#     Each InferenceService becomes a plain Deployment + Service + HPA. The
+#     default, Knative, would require Knative Serving and Istio — roughly 15
+#     extra pods, which does not fit on a single 7.6Gi kind node.
+#
+#   gateway.disableIngressCreation: true
+#     In RawDeployment, KServe otherwise wants Gateway API + Envoy Gateway to
+#     publish each InferenceService externally. Nothing here needs external
+#     ingress: LiteLLM is a pod on the same network and talks to the predictor
+#     Service directly. Dropping it removes the entire Gateway API dependency.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kserve
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: mlops
+  source:
+    repoURL: ghcr.io/kserve/charts
+    chart: kserve-resources
+    targetRevision: v0.20.0
+    helm:
+      releaseName: kserve
+      # The CRDs come from the kserve-crd Application in wave 1.
+      skipCrds: true
+      values: |
+        kserve:
+          controller:
+            deploymentMode: RawDeployment
+            gateway:
+              disableIngressCreation: true
+            resources:
+              requests: { cpu: 100m, memory: 300Mi }
+              limits:   { cpu: "1",  memory: 500Mi }
+            rbacProxy:
+              resources:
+                requests: { cpu: 10m, memory: 64Mi }
+                limits:   { cpu: 100m, memory: 128Mi }
+          # Node-local model caching: extra controller + a DaemonSet, and the
+          # weights are baked into the image here anyway.
+          localmodel:
+            enabled: false
+          metricsaggregator:
+            enableMetricAggregation: "false"
+            enablePrometheusScraping: "false"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kserve
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff: { duration: 15s, factor: 2, maxDuration: 5m }

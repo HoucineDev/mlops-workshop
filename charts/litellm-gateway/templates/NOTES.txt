@@ -1,0 +1,15 @@
+LiteLLM gateway "{{ include "litellm-gateway.fullname" . }}" deployed to namespace {{ .Release.Namespace }}.
+
+Models it will route:
+{{- range .Values.kserve.inferenceServices }}
+  {{ .alias }}  ->  http://{{ .name }}-predictor.{{ include "litellm-gateway.kserveNamespace" $ }}.svc.cluster.local/v1  ({{ .servedModel }})
+{{- end }}
+
+Reach it from your laptop:
+  kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "litellm-gateway.fullname" . }} {{ .Values.service.port }}:{{ .Values.service.port }}
+
+Then:
+  curl http://localhost:{{ .Values.service.port }}/v1/chat/completions \
+    -H "Authorization: Bearer <master key>" \
+    -H "Content-Type: application/json" \
+    -d '{"model":"{{ (first .Values.kserve.inferenceServices).alias }}","messages":[{"role":"user","content":"Hello"}]}'

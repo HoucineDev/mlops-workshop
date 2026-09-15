@@ -1,0 +1,42 @@
+# Wave 3 — the model itself.
+#
+# Chart source is the Git path, not the published OCI chart. That keeps the
+# edit loop instant: push a template change and ArgoCD picks it up, with no
+# package/push/version-bump cycle in between. `make publish` pushes the exact
+# same chart to Docker Hub for versioned releases; switch the source block to
+# the commented-out OCI form when you want ArgoCD to consume those instead.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: model-inference
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: mlops
+  source:
+    repoURL: https://github.com/HoucineDev/mlops-workshop.git
+    targetRevision: main
+    path: charts/model-inference
+    helm:
+      releaseName: tiny-llm
+      valueFiles:
+        - values.yaml
+    # --- published-chart alternative -------------------------------------
+    # repoURL: registry-1.docker.io/elhou
+    # chart: model-inference
+    # targetRevision: 0.1.0
+    # ---------------------------------------------------------------------
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: models
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff: { duration: 15s, factor: 2, maxDuration: 5m }

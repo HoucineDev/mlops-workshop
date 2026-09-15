@@ -1,0 +1,96 @@
+# litellm-gateway
+#
+# This is a deliberately thin chart rather than a wrapper around the upstream
+# `oci://ghcr.io/berriai/litellm-helm`. Two reasons:
+#   1. Upstream defaults to deploying a standalone PostgreSQL plus a schema
+#      migration Job. Those exist for virtual keys and spend tracking, neither
+#      of which this workshop uses, and they cost ~300Mi on a 7.6Gi node.
+#   2. It lets `kserve.autoDiscover` below build predictor URLs from the
+#      InferenceService name, so the model list stays correct when you rename
+#      things. A values-only wrapper cannot template that.
+# For production with virtual keys / budgets, use the upstream chart instead.
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/berriai/litellm
+  tag: "v1.100.1"
+  pullPolicy: IfNotPresent
+
+nameOverride: ""
+fullnameOverride: ""
+
+service:
+  type: ClusterIP
+  port: 4000
+  annotations: {}
+
+# -- Master key for the proxy's own API (sent as `Authorization: Bearer <key>`).
+masterKey:
+  # -- Generate a Secret from `value` below. Set to false and fill
+  # existingSecret to keep the key out of Git — which is what you want the
+  # moment this stops being a workshop.
+  create: true
+  value: "sk-workshop-local-only"
+  existingSecret: ""
+  existingSecretKey: "masterkey"
+
+kserve:
+  # -- Build the model_list automatically from the InferenceServices below.
+  # Produces: http://<name>-predictor.<namespace>.svc.cluster.local/v1
+  autoDiscover: true
+  # -- Namespace the InferenceServices live in. Defaults to the release
+  # namespace when empty.
+  namespace: "models"
+  inferenceServices:
+    # `name` must match model-inference's inferenceService.name.
+    # `servedModel` must match its servingRuntime.modelAlias — llama-server
+    # rejects a request whose model field it does not recognise.
+    - alias: tiny-llm          # the name clients ask LiteLLM for
+      name: tiny-llm           # the InferenceService name
+      servedModel: smollm2-135m-instruct
+
+# -- Extra entries appended to model_list verbatim (e.g. a real OpenAI key).
+extraModels: []
+
+# -- Merged into the generated proxy config. Anything LiteLLM accepts under
+# litellm_settings / general_settings / router_settings goes here.
+proxyConfig:
+  litellm_settings:
+    drop_params: true
+    # KServe pods are on the pod network; these are not internet calls.
+    request_timeout: 120
+  general_settings: {}
+  router_settings: {}
+
+resources:
+  requests:
+    cpu: "200m"
+    memory: "512Mi"
+  limits:
+    cpu: "1"
+    memory: "1Gi"
+
+# -- Extra env vars for the proxy container.
+env: []
+
+podAnnotations: {}
+podLabels: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# -- The upstream LiteLLM image declares USER root and its entrypoint
+# (docker/prod_entrypoint.sh) writes into /app at startup, so forcing
+# runAsNonRoot here makes the pod CrashLoop. We drop what can be dropped and
+# leave the uid alone. If your cluster enforces a restricted PodSecurity
+# profile, you need a rebuilt image, not a values override.
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}

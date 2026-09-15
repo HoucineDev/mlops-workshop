@@ -1,0 +1,46 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "litellm-gateway.fullname" . }}-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "litellm-gateway.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    model_list:
+    {{- if .Values.kserve.autoDiscover }}
+    {{- $ns := include "litellm-gateway.kserveNamespace" . }}
+    {{- range .Values.kserve.inferenceServices }}
+      - model_name: {{ .alias | quote }}
+        litellm_params:
+          # `openai/<model>` tells LiteLLM to speak the OpenAI protocol and to
+          # forward <model> verbatim as the request's `model` field. The
+          # predictor only answers to the alias llama-server was started with.
+          model: {{ printf "openai/%s" .servedModel | quote }}
+          # KServe RawDeployment names the predictor Service <isvc>-predictor
+          # and serves it on port 80.
+          api_base: {{ printf "http://%s-predictor.%s.svc.cluster.local/v1" .name $ns | quote }}
+          # llama-server takes no auth, but the OpenAI client library refuses to
+          # send a request with no key at all, so this placeholder is required.
+          api_key: "not-needed"
+    {{- end }}
+    {{- end }}
+    {{- with .Values.extraModels }}
+    {{- toYaml . | nindent 6 }}
+    {{- end }}
+
+    general_settings:
+      master_key: os.environ/LITELLM_MASTER_KEY
+      {{- with .Values.proxyConfig.general_settings }}
+      {{- toYaml . | nindent 6 }}
+      {{- end }}
+
+    {{- with .Values.proxyConfig.litellm_settings }}
+    litellm_settings:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+
+    {{- with .Values.proxyConfig.router_settings }}
+    router_settings:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}

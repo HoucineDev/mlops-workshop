@@ -1,0 +1,11 @@
+{{ include "model-inference.fullname" . }} is deploying on KServe ({{ .Values.inferenceService.deploymentMode }}).
+
+Watch it come up:
+  kubectl get inferenceservice {{ include "model-inference.fullname" . }} -n {{ .Release.Namespace }} -w
+
+In-cluster OpenAI base URL (this is what litellm-gateway must point at):
+  {{ include "model-inference.predictorURL" . }}/v1
+
+Smoke-test it from inside the cluster:
+  kubectl run curl-test --rm -it --restart=Never -n {{ .Release.Namespace }} --image=curlimages/curl:8.11.1 -- \
+    curl -s {{ include "model-inference.predictorURL" . }}/v1/models

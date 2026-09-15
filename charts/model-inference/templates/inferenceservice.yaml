@@ -1,0 +1,87 @@
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: {{ include "model-inference.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "model-inference.labels" . | nindent 4 }}
+    {{- with .Values.inferenceService.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  annotations:
+    # This annotation is what selects RawDeployment over Serverless. Without
+    # it KServe falls back to the cluster default in the
+    # inferenceservice-config ConfigMap, which ships as Knative.
+    serving.kserve.io/deploymentMode: {{ .Values.inferenceService.deploymentMode }}
+    {{- with .Values.inferenceService.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  predictor:
+    minReplicas: {{ .Values.inferenceService.minReplicas }}
+    maxReplicas: {{ .Values.inferenceService.maxReplicas }}
+    {{- with .Values.predictor.nodeSelector }}
+    nodeSelector:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with .Values.predictor.tolerations }}
+    tolerations:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with .Values.predictor.affinity }}
+    affinity:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- if eq .Values.predictor.mode "runtime" }}
+    # Runtime mode: the InferenceService says *what* to serve; the
+    # ClusterServingRuntime that claims this modelFormat supplies the image,
+    # ports, probes and resources.
+    model:
+      modelFormat:
+        name: {{ .Values.predictor.modelFormat }}
+      runtime: {{ .Values.servingRuntime.name }}
+      {{- if .Values.predictor.storageUri }}
+      storageUri: {{ .Values.predictor.storageUri | quote }}
+      {{- end }}
+    {{- else }}
+    # Container mode: everything inlined, no ServingRuntime involved. The
+    # container MUST be named kserve-container — that is how KServe finds the
+    # user container to wire the predictor Service to.
+    containers:
+      - name: kserve-container
+        image: "{{ .Values.servingRuntime.image.repository }}:{{ .Values.servingRuntime.image.tag }}"
+        imagePullPolicy: {{ .Values.servingRuntime.image.pullPolicy }}
+        ports:
+          - containerPort: {{ .Values.servingRuntime.port }}
+            protocol: TCP
+        env:
+          - name: LLAMA_ARG_PORT
+            value: {{ .Values.servingRuntime.port | quote }}
+          - name: LLAMA_ARG_ALIAS
+            value: {{ .Values.servingRuntime.modelAlias | quote }}
+          {{- with .Values.servingRuntime.env }}
+          {{- toYaml . | nindent 10 }}
+          {{- end }}
+        resources:
+          {{- toYaml .Values.predictor.resources | nindent 10 }}
+        securityContext:
+          {{- toYaml .Values.securityContext | nindent 10 }}
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: {{ .Values.servingRuntime.port }}
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        startupProbe:
+          httpGet:
+            path: /health
+            port: {{ .Values.servingRuntime.port }}
+          periodSeconds: 5
+          failureThreshold: {{ .Values.predictor.startupProbeFailureThreshold }}
+        volumeMounts:
+          - name: tmp
+            mountPath: /tmp
+    volumes:
+      - name: tmp
+        emptyDir: {}
+    {{- end }}

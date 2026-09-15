@@ -1,0 +1,38 @@
+# The app-of-apps root. Applied ONCE by hand; from then on every Application in
+# gitops/apps/ is created, updated and pruned by ArgoCD from Git.
+#
+# Add a platform component by dropping a file in gitops/apps/ and pushing. Do
+# not kubectl apply Applications directly — that is how the previous setup
+# drifted out of Git.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: mlops-root
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: mlops
+  source:
+    repoURL: https://github.com/HoucineDev/mlops-workshop.git
+    targetRevision: main
+    path: gitops/apps
+    directory:
+      recurse: true
+      # Only pick up Applications, never stray YAML.
+      include: '*.yaml'
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m

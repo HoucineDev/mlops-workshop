@@ -1,0 +1,13 @@
+apiVersion: v2
+name: model-inference
+description: Deploy a model on KServe as an InferenceService, with an optional ClusterServingRuntime
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords: [kserve, inference, llm, openai]
+home: https://github.com/HoucineDev/mlops-workshop
+sources:
+  - https://github.com/HoucineDev/mlops-workshop
+maintainers:
+  - name: HoucineDev
+    url: https://github.com/HoucineDev

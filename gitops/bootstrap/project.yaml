@@ -1,0 +1,42 @@
+# AppProject: the blast radius for everything this workshop deploys.
+#
+# Applied ONCE by hand (`make bootstrap`). Everything after this point is
+# created by ArgoCD from Git — that is the whole bootstrap-then-GitOps pattern.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: mlops
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  description: KServe model serving + LiteLLM gateway, delivered by ArgoCD
+
+  # Only these sources may be synced. An Application pointing anywhere else is
+  # rejected by the API server, which is what makes an AppProject a real
+  # boundary rather than documentation.
+  sourceRepos:
+    - https://github.com/HoucineDev/mlops-workshop.git
+    - https://charts.jetstack.io                    # cert-manager
+    - ghcr.io/kserve/charts                         # kserve-crd, kserve-resources (OCI)
+    - registry-1.docker.io/elhou                    # your published charts (OCI)
+
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: cert-manager
+    - server: https://kubernetes.default.svc
+      namespace: kserve
+    - server: https://kubernetes.default.svc
+      namespace: models
+    - server: https://kubernetes.default.svc
+      namespace: ai-gateway
+    - server: https://kubernetes.default.svc
+      namespace: argocd
+
+  # KServe and cert-manager both install CRDs, webhooks and ClusterRoles.
+  clusterResourceWhitelist:
+    - group: '*'
+      kind: '*'
+  namespaceResourceWhitelist:
+    - group: '*'
+      kind: '*'

@@ -1,0 +1,13 @@
+apiVersion: v2
+name: litellm-gateway
+description: LiteLLM proxy fronting KServe InferenceServices with one OpenAI-compatible API
+type: application
+version: 0.1.0
+appVersion: "1.100.1"
+keywords: [litellm, openai, gateway, kserve, llm]
+home: https://github.com/HoucineDev/mlops-workshop
+sources:
+  - https://github.com/HoucineDev/mlops-workshop
+maintainers:
+  - name: HoucineDev
+    url: https://github.com/HoucineDev

@@ -1,0 +1,55 @@
+# Wave 0 — cert-manager.
+#
+# KServe's admission/conversion webhooks need serving certificates. cert-manager
+# is the only hard dependency of KServe "standard mode"; the Knative and Istio
+# stack that KServe Serverless requires is deliberately absent.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cert-manager
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: mlops
+  source:
+    repoURL: https://charts.jetstack.io
+    chart: cert-manager
+    targetRevision: v1.17.2
+    helm:
+      releaseName: cert-manager
+      values: |
+        crds:
+          enabled: true
+          keep: true
+        # Single-node kind box: one replica of everything, and small requests so
+        # the scheduler can still fit KServe, the model and LiteLLM alongside.
+        replicaCount: 1
+        resources:
+          requests: { cpu: 10m, memory: 64Mi }
+          limits:   { memory: 128Mi }
+        webhook:
+          replicaCount: 1
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits:   { memory: 64Mi }
+        cainjector:
+          replicaCount: 1
+          resources:
+            requests: { cpu: 10m, memory: 64Mi }
+            limits:   { memory: 128Mi }
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cert-manager
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions:
+      - CreateNamespace=true
+      # cert-manager's CRDs exceed the 262144-byte last-applied-configuration
+      # annotation limit that client-side apply uses.
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff: { duration: 10s, factor: 2, maxDuration: 3m }

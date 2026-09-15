@@ -1,0 +1,39 @@
+# Wave 4 — the LiteLLM gateway.
+#
+# Last, because its readiness probe checks the configured upstreams: starting it
+# before the predictor exists just means a few minutes of failing probes.
+#
+# The chart's kserve.inferenceServices list is what wires the two together. It
+# renders api_base as
+#   http://tiny-llm-predictor.models.svc.cluster.local/v1
+# which is exactly the Service KServe creates for the InferenceService in wave 3.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: litellm-gateway
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: mlops
+  source:
+    repoURL: https://github.com/HoucineDev/mlops-workshop.git
+    targetRevision: main
+    path: charts/litellm-gateway
+    helm:
+      releaseName: litellm-gateway
+      valueFiles:
+        - values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ai-gateway
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff: { duration: 15s, factor: 2, maxDuration: 5m }

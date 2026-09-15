@@ -1,0 +1,100 @@
+# -- Namespace-agnostic: the release namespace is used for everything.
+nameOverride: ""
+fullnameOverride: ""
+
+inferenceService:
+  # -- Name of the InferenceService. LiteLLM addresses the predictor at
+  # http://<name>-predictor.<namespace>.svc.cluster.local — change this and you
+  # must change litellm-gateway's `kserve.serviceName` too.
+  name: tiny-llm
+
+  # -- RawDeployment gives you a plain Deployment + Service + HPA. The
+  # alternative, Serverless, drags in Knative Serving AND Istio (~15 extra
+  # pods). On a single-node kind cluster with 7.6Gi that is not a trade worth
+  # making, and nothing in this workshop uses scale-to-zero.
+  deploymentMode: RawDeployment
+
+  minReplicas: 1
+  maxReplicas: 1
+
+  # -- Extra annotations merged onto the InferenceService.
+  annotations: {}
+  labels: {}
+
+predictor:
+  # -- How the predictor container is described.
+  #   runtime   → reference a ServingRuntime by modelFormat (the KServe-native
+  #               abstraction: the runtime declares the image, the
+  #               InferenceService only declares *what* it wants served).
+  #   container → inline a raw container spec in the InferenceService itself
+  #               (fewer moving parts; useful when a runtime is overkill).
+  # Both produce an identical Deployment. `runtime` is the default because it
+  # is the model that scales to many InferenceServices sharing one image.
+  mode: runtime
+
+  # -- Model format requested by the InferenceService. Must match a
+  # supportedModelFormats entry on the ServingRuntime below.
+  modelFormat: llamacpp
+
+  # -- Where the weights come from. Empty means "already in the image", which
+  # skips KServe's storage-initializer init container entirely — no bucket, no
+  # credentials. Set e.g. s3://bucket/model to use object storage instead.
+  storageUri: ""
+
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "512Mi"
+    limits:
+      cpu: "2"
+      memory: "1Gi"
+
+  # -- Seconds to allow for model load before the readiness probe is trusted.
+  # SmolLM2-135M loads in ~2s; a larger GGUF needs more.
+  startupProbeFailureThreshold: 30
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+servingRuntime:
+  # -- Create a ClusterServingRuntime. Cluster-scoped so several namespaces can
+  # share it; set `scope: namespaced` for a plain ServingRuntime instead.
+  enabled: true
+  scope: cluster
+  name: llamacpp-openai
+
+  image:
+    repository: docker.io/elhou/tiny-llm-server
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+
+  # -- Port the container serves OpenAI traffic on. KServe wires the predictor
+  # Service to this.
+  port: 8080
+
+  # -- llama-server reads all of its configuration from LLAMA_ARG_* env vars,
+  # so the chart can retune the server without rebuilding the image.
+  env:
+    - name: LLAMA_ARG_CTX_SIZE
+      value: "2048"
+    - name: LLAMA_ARG_THREADS
+      value: "2"
+    - name: LLAMA_ARG_N_PARALLEL
+      value: "1"
+
+  # -- Model name advertised at GET /v1/models. LiteLLM's `model:` field must
+  # match this exactly.
+  modelAlias: smollm2-135m-instruct
+
+  # -- OpenAI-compatible protocol version claimed by the runtime.
+  protocolVersions:
+    - v2
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]

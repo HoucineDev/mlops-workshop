@@ -1,0 +1,37 @@
+# Wave 1 — KServe CRDs, split from the controller on purpose.
+#
+# The InferenceService CRD must be established before the controller's webhook
+# configuration references it, and before any InferenceService in wave 3 is
+# submitted. A single chart cannot guarantee that ordering; two Applications in
+# different sync waves can.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kserve-crd
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: mlops
+  source:
+    repoURL: ghcr.io/kserve/charts
+    chart: kserve-crd
+    targetRevision: v0.20.0
+    helm:
+      releaseName: kserve-crd
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kserve
+  syncPolicy:
+    automated: { prune: false, selfHeal: true }   # never prune CRDs automatically
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      # KServe's CRDs carry very large OpenAPI schemas; Replace avoids the
+      # "metadata.annotations: Too long" failure on re-apply.
+      - Replace=true
+    retry:
+      limit: 5
+      backoff: { duration: 10s, factor: 2, maxDuration: 3m }

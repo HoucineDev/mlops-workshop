@@ -1,0 +1,79 @@
+{{- if .Values.servingRuntime.enabled }}
+apiVersion: serving.kserve.io/v1alpha1
+{{- if eq .Values.servingRuntime.scope "cluster" }}
+kind: ClusterServingRuntime
+{{- else }}
+kind: ServingRuntime
+{{- end }}
+metadata:
+  name: {{ .Values.servingRuntime.name }}
+  {{- if ne .Values.servingRuntime.scope "cluster" }}
+  namespace: {{ .Release.Namespace }}
+  {{- end }}
+  labels:
+    {{- include "model-inference.labels" . | nindent 4 }}
+  annotations:
+    # The runtime must exist before any InferenceService selects it. Both live
+    # in this chart, so Helm's own ordering is not enough — ArgoCD sync-waves
+    # are what actually sequence them.
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  supportedModelFormats:
+    - name: {{ .Values.predictor.modelFormat }}
+      version: "1"
+      # autoSelect lets an InferenceService pick this runtime purely from its
+      # modelFormat, with no explicit `runtime:` field.
+      autoSelect: true
+      priority: 1
+  protocolVersions:
+    {{- toYaml .Values.servingRuntime.protocolVersions | nindent 4 }}
+  containers:
+    - name: kserve-container
+      image: "{{ .Values.servingRuntime.image.repository }}:{{ .Values.servingRuntime.image.tag }}"
+      imagePullPolicy: {{ .Values.servingRuntime.image.pullPolicy }}
+      ports:
+        - containerPort: {{ .Values.servingRuntime.port }}
+          protocol: TCP
+      env:
+        - name: LLAMA_ARG_PORT
+          value: {{ .Values.servingRuntime.port | quote }}
+        - name: LLAMA_ARG_ALIAS
+          value: {{ .Values.servingRuntime.modelAlias | quote }}
+        {{- with .Values.servingRuntime.env }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      resources:
+        {{- toYaml .Values.predictor.resources | nindent 8 }}
+      securityContext:
+        {{- toYaml .Values.securityContext | nindent 8 }}
+      # llama-server answers 503 on /health until the GGUF is fully mapped into
+      # memory, so this is a true model-load gate rather than a process check.
+      readinessProbe:
+        httpGet:
+          path: /health
+          port: {{ .Values.servingRuntime.port }}
+        initialDelaySeconds: 5
+        periodSeconds: 5
+        timeoutSeconds: 3
+      livenessProbe:
+        httpGet:
+          path: /health
+          port: {{ .Values.servingRuntime.port }}
+        initialDelaySeconds: 30
+        periodSeconds: 20
+        timeoutSeconds: 5
+      startupProbe:
+        httpGet:
+          path: /health
+          port: {{ .Values.servingRuntime.port }}
+        periodSeconds: 5
+        failureThreshold: {{ .Values.predictor.startupProbeFailureThreshold }}
+      volumeMounts:
+        # readOnlyRootFilesystem is on, but llama-server still wants a writable
+        # /tmp for its scratch files.
+        - name: tmp
+          mountPath: /tmp
+  volumes:
+    - name: tmp
+      emptyDir: {}
+{{- end }}
