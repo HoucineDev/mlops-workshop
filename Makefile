@@ -11,9 +11,45 @@ SHELL := /bin/bash
 
 DOCKER_USER   ?= elhou
 IMAGE_NAME    ?= tiny-llm-server
-IMAGE_TAG     ?= 0.1.0
-IMAGE         := docker.io/$(DOCKER_USER)/$(IMAGE_NAME):$(IMAGE_TAG)
 PLATFORMS     ?= linux/arm64,linux/amd64
+
+# ── model catalogue ──────────────────────────────────────────────────────────
+# One image per model, the GGUF baked in. Pick with MODEL=<name>:
+#   make image MODEL=qwen3-0.6b
+#
+# MODEL_SHA256 is the sha256 of the LFS object; get it for a new model with
+#   curl -sIL <url> | grep -i x-linked-etag
+# Leaving it wrong is safe — the build fails the checksum rather than shipping
+# unverified weights.
+MODEL ?= smollm2-135m
+
+ifeq ($(MODEL),smollm2-135m)
+MODEL_URL    := https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct-Q4_K_M.gguf
+MODEL_SHA256 := 2e8040ceae7815abe0dcb3540b9995eaa1fa0d2ca9e797d0a635ae4433c68c2d
+endif
+ifeq ($(MODEL),qwen3-0.6b)
+MODEL_URL    := https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q4_K_M.gguf
+MODEL_SHA256 := ac2d97712095a558e31573f62f466a3f9d93990898b0ec79d7c974c1780d524a
+endif
+ifeq ($(MODEL),qwen2.5-0.5b)
+MODEL_URL    := https://huggingface.co/bartowski/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/Qwen2.5-0.5B-Instruct-Q4_K_M.gguf
+MODEL_SHA256 := 6eb923e7d26e9cea28811e1a8e852009b21242fb157b26149d3b188f3a8c8653
+endif
+
+ifeq ($(strip $(MODEL_URL)),)
+$(error unknown MODEL "$(MODEL)" — see the catalogue at the top of the Makefile)
+endif
+
+# The original SmolLM2 image predates this scheme and is published as plain
+# 0.1.0; every other model is tagged <model>-<version>.
+VERSION       ?= 0.1.0
+ifeq ($(MODEL),smollm2-135m)
+IMAGE_TAG     ?= $(VERSION)
+else
+IMAGE_TAG     ?= $(MODEL)-$(VERSION)
+endif
+IMAGE         := docker.io/$(DOCKER_USER)/$(IMAGE_NAME):$(IMAGE_TAG)
+BUILD_ARGS    := --build-arg MODEL_URL=$(MODEL_URL) --build-arg MODEL_SHA256=$(MODEL_SHA256)
 
 CHART_REGISTRY ?= oci://registry-1.docker.io/$(DOCKER_USER)
 CHARTS         := model-inference litellm-gateway
@@ -34,12 +70,12 @@ help: ## Show this help
 
 ##@ Image
 .PHONY: image
-image: ## Build the model server for the local arch and load it into Docker
-	docker buildx build --load -t $(IMAGE) images/tiny-llm-server
+image: ## Build the model server for the local arch (MODEL=<name> to pick one)
+	docker buildx build --load -t $(IMAGE) $(BUILD_ARGS) images/tiny-llm-server
 
 .PHONY: push
 push: ## Build multi-arch and push to Docker Hub (needs: docker login -u $(DOCKER_USER))
-	docker buildx build --platform $(PLATFORMS) --push -t $(IMAGE) images/tiny-llm-server
+	docker buildx build --platform $(PLATFORMS) --push -t $(IMAGE) $(BUILD_ARGS) images/tiny-llm-server
 
 .PHONY: image-load
 image-load: image ## Load the image straight into kind, skipping Docker Hub entirely
@@ -48,6 +84,14 @@ image-load: image ## Load the image straight into kind, skipping Docker Hub enti
 .PHONY: image-run
 image-run: image ## Run the model server locally on :8080 to sanity-check it
 	docker run --rm -p 8080:8080 $(IMAGE)
+
+.PHONY: models
+models: ## List the models in the catalogue
+	@echo "  smollm2-135m   105 MB  fast, frequently wrong"
+	@echo "  qwen3-0.6b     378 MB  reasoning model — needs LLAMA_ARG_REASONING=off"
+	@echo "  qwen2.5-0.5b   379 MB  solid non-reasoning alternative"
+	@echo
+	@echo "  build one:  make image MODEL=qwen3-0.6b"
 
 ##@ Charts
 .PHONY: lint
