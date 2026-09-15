@@ -124,3 +124,22 @@ Pruning a CRD deletes every custom resource of that kind, cluster-wide. An
 accidental prune of `inferenceservices.serving.kserve.io` would silently delete
 every model in the cluster. CRDs are removed deliberately, by hand, or not
 at all.
+
+---
+
+## 9. Verified results (2026-09-15, kind-argocd, arm64, 8 CPU / 7.6Gi)
+
+| Check | Result |
+| --- | --- |
+| `tiny-llm-server` starts as uid 65532, read-only rootfs | healthy in **2s** |
+| InferenceService `tiny-llm` | **READY in 12s** |
+| Predictor `GET /v1/models` | returns `smollm2-135m-instruct` |
+| LiteLLM proxy init | `Proxy initialized with Config, Set models: tiny-llm` |
+| End-to-end chat completion | **164 tok/s** generation on CPU |
+| Whole stack node footprint | **23% CPU / 24% memory** requests |
+
+The InferenceService reports a URL of `http://tiny-llm-models.example.com`. That
+is KServe's default `ingressDomain` being templated into the status field, and
+it is cosmetic here — `disableIngressCreation: true` means no Ingress or
+HTTPRoute is created and nothing resolves that name. The address that matters is
+the predictor Service, `tiny-llm-predictor.models.svc.cluster.local`.
