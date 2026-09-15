@@ -24,22 +24,31 @@ spec:
         crds:
           enabled: true
           keep: true
-        # Single-node kind box: one replica of everything, and small requests so
-        # the scheduler can still fit KServe, the model and LiteLLM alongside.
+        # Single-node kind box: one replica of everything. Requests stay small so
+        # the scheduler can fit KServe, the models and LiteLLM alongside, but the
+        # LIMITS are deliberately not tight.
+        #
+        # The original values here capped the controller at 128Mi and cainjector
+        # at 128Mi. Both were eventually OOM-killed (exit 137) and sat in
+        # CrashLoopBackOff, which stalls wave 0 and therefore every later wave.
+        # cert-manager's memory tracks the number of CRDs and Secrets it watches,
+        # so it grows with the cluster rather than staying at its startup size.
         replicaCount: 1
         resources:
-          requests: { cpu: 10m, memory: 64Mi }
-          limits:   { memory: 128Mi }
+          requests: { cpu: 10m, memory: 96Mi }
+          limits:   { memory: 384Mi }
         webhook:
           replicaCount: 1
           resources:
-            requests: { cpu: 10m, memory: 32Mi }
-            limits:   { memory: 64Mi }
+            requests: { cpu: 10m, memory: 48Mi }
+            limits:   { memory: 192Mi }
         cainjector:
           replicaCount: 1
+          # cainjector is the hungriest of the three: it caches every CA bundle
+          # it injects, and KServe's CRDs are large.
           resources:
-            requests: { cpu: 10m, memory: 64Mi }
-            limits:   { memory: 128Mi }
+            requests: { cpu: 10m, memory: 128Mi }
+            limits:   { memory: 512Mi }
   destination:
     server: https://kubernetes.default.svc
     namespace: cert-manager
