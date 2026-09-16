@@ -1,4 +1,7 @@
 # Wave 1 — Envoy Gateway, the data plane Agent Router builds on.
+#
+# v1.8.1 is the floor: Agent Router v1.1 requires Envoy Gateway 1.8.1+. An
+# earlier revision pinned v1.5.2, below that floor.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -13,7 +16,7 @@ spec:
   source:
     repoURL: docker.io/envoyproxy
     chart: gateway-helm
-    targetRevision: v1.5.2
+    targetRevision: v1.8.1
     helm:
       releaseName: envoy-gateway
       values: |

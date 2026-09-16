@@ -4,9 +4,13 @@
 # gateway.networking.k8s.io CRDs, and this cluster had none. Without them the
 # Envoy Gateway controller cannot start.
 #
-# Pinned to v1.3.0 because Envoy Gateway v1.5.2 builds against
-# sigs.k8s.io/gateway-api v1.3.x (see its go.mod). v1.6.2 is current upstream
-# but is newer than what this controller was tested against.
+# Pinned to v1.5.x per the Agent Router v1.1 compatibility matrix:
+#   Envoy Gateway 1.8.1+, Envoy 1.38, Kubernetes 1.32+, Gateway API 1.5
+#
+# An earlier revision pinned v1.3.0, derived from the go.mod of Envoy Gateway
+# v1.5.2. That was the wrong source of truth: the floor is set by the AI Gateway
+# release's own compatibility matrix, not by whichever Envoy Gateway version
+# happened to be chosen.
 #
 # Vendored into the repo rather than applied from a release URL so the version
 # is visible in Git and ArgoCD owns the objects.

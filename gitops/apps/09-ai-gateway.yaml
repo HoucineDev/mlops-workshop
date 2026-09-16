@@ -27,6 +27,18 @@ spec:
           resources:
             requests: { cpu: 50m, memory: 128Mi }
             limits:   { memory: 384Mi }
+          # Issue #2591: the chart generates the mutating-webhook certificate
+          # with a Helm `lookup`, producing different content on every render.
+          # ArgoCD then sees the Secret change on every refresh and the
+          # Application is permanently OutOfSync — the same never-converging
+          # diff that stalled sync waves twice already (DECISIONS §10, §15).
+          #
+          # Handing the certificate to cert-manager removes the generated
+          # Secret, so no ignoreDifferences is needed. cert-manager already runs
+          # here as KServe's dependency.
+          mutatingWebhook:
+            certManager:
+              enable: true
   destination:
     server: https://kubernetes.default.svc
     namespace: envoy-ai-gateway-system
