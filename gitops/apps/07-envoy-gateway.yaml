@@ -81,11 +81,14 @@ spec:
                       includeAll: true
                     secret:
                       includeAll: true
+                  # Only the hooks the AI Gateway controller actually
+                  # implements. Including HTTPListener makes every xDS
+                  # translation fail with:
+                  #   skipped publishing xds resources: failed to translate xds
+                  #   ir: rpc error: code = Unimplemented desc = method
+                  #   PostHTTPListenerModify not implemented
                   post:
                     - Translation
-                    - Cluster
-                    - Route
-                    - HTTPListener
               service:
                 fqdn:
                   hostname: ai-gateway-controller.envoy-ai-gateway-system.svc.cluster.local
