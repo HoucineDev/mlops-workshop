@@ -1,0 +1,59 @@
+# agent-router — Envoy AI Gateway ("Agent Router") in front of the SAME KServe
+# predictors that LiteLLM serves, so the two gateways can be compared on
+# identical backends.
+#
+#   client ──▶ Envoy Gateway :80 ──▶ AIGatewayRoute (matches x-ai-eg-model)
+#                                     └▶ AIServiceBackend (schema: OpenAI)
+#                                          └▶ Backend (fqdn) ──▶ <isvc>-predictor
+#
+# How routing works, because it is not obvious: the AI Gateway reads the `model`
+# field out of the OpenAI request BODY and promotes it to the `x-ai-eg-model`
+# header. AIGatewayRoute then matches on that header. So a client still sends a
+# normal OpenAI request — it does not set the header itself.
+
+gatewayClassName: agent-router
+gatewayName: agent-router
+
+listener:
+  port: 80
+
+# -- Envoy's default buffer limit is 32kiB, which is too small for AI request or
+# response bodies. The upstream examples raise it to 50Mi; without this, larger
+# prompts and streamed responses fail.
+bufferLimit: 50Mi
+
+envoyProxy:
+  # -- Resources for the Envoy data-plane pod that Envoy Gateway creates for
+  # this Gateway. The chart's default is 256Mi request / 1Gi limit per proxy.
+  # This node runs two models, Postgres, LiteLLM, cert-manager, ingress-nginx
+  # and KServe already, and ran out of memory once today, so the proxy is kept
+  # deliberately small. The upstream example clears these entirely for local
+  # testing; explicit small values are better than none, since a pod with no
+  # requests is BestEffort and dies first under pressure.
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 384Mi
+
+# -- The models to expose. `name` is what a client puts in the OpenAI `model`
+# field; `service`/`namespace`/`port` locate the KServe predictor Service.
+models:
+  - name: tiny-llm
+    service: tiny-llm-predictor
+    namespace: models
+    port: 80
+  - name: qwen3
+    service: qwen3-predictor
+    namespace: models
+    port: 80
+
+ingress:
+  # -- Publish the gateway through the existing ingress-nginx so it is reachable
+  # at the same kind of hostname as LiteLLM. Envoy Gateway creates its own
+  # Service for the Gateway; this just points nginx at it.
+  enabled: true
+  className: nginx
+  host: agent-router.localtest.me
+  proxyTimeout: 600

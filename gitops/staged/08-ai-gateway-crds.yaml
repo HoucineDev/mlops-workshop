@@ -1,0 +1,35 @@
+# Wave 2 — Envoy AI Gateway CRDs, split from the controller for the same reason
+# KServe's are: the CRDs must be established before the controller's webhook
+# references them, and before any AIGatewayRoute is submitted in wave 6.
+#
+# Ships: AIGatewayRoute, AIServiceBackend, BackendSecurityPolicy, GatewayConfig,
+# MCPRoute, QuotaPolicy (group aigateway.envoyproxy.io).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ai-gateway-crds
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: mlops
+  source:
+    repoURL: docker.io/envoyproxy
+    chart: ai-gateway-crds-helm
+    targetRevision: 1.1.0
+    helm:
+      releaseName: ai-gateway-crds
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: envoy-ai-gateway-system
+  syncPolicy:
+    automated: { prune: false, selfHeal: true }
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - Replace=true
+    retry:
+      limit: 5
+      backoff: { duration: 10s, factor: 2, maxDuration: 3m }

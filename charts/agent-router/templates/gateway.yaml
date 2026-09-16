@@ -1,0 +1,65 @@
+# GatewayClass is cluster-scoped and binds this Gateway to Envoy Gateway's
+# controller. The AI Gateway controller then mutates the resulting Envoy pod
+# (via its MutatingWebhookConfiguration) to add the AI-specific filters.
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: {{ .Values.gatewayClassName }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  controllerName: gateway.envoyproxy.io/gatewayclass-controller
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: {{ .Values.gatewayName }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  gatewayClassName: {{ .Values.gatewayClassName }}
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: {{ .Values.listener.port }}
+      allowedRoutes:
+        namespaces:
+          from: Same
+  infrastructure:
+    parametersRef:
+      group: gateway.envoyproxy.io
+      kind: EnvoyProxy
+      name: {{ .Values.gatewayName }}
+---
+# Sizes the Envoy data-plane pod that Envoy Gateway creates for the Gateway
+# above. Without this it asks for 256Mi and may take 1Gi.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyProxy
+metadata:
+  name: {{ .Values.gatewayName }}
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  provider:
+    type: Kubernetes
+    kubernetes:
+      envoyDeployment:
+        replicas: 1
+        container:
+          resources:
+            {{- toYaml .Values.envoyProxy.resources | nindent 12 }}
+---
+# Envoy defaults to a 32kiB buffer limit, which truncates AI request and
+# response bodies.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: ClientTrafficPolicy
+metadata:
+  name: {{ .Values.gatewayName }}-buffer-limit
+  namespace: {{ .Release.Namespace }}
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: {{ .Values.gatewayName }}
+  connection:
+    bufferLimit: {{ .Values.bufferLimit }}

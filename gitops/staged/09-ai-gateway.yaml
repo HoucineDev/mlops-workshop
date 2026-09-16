@@ -1,0 +1,40 @@
+# Wave 3 — the Envoy AI Gateway controller ("Agent Router").
+#
+# It does not serve traffic itself. It watches AIGatewayRoute/AIServiceBackend
+# and, through a MutatingWebhookConfiguration, injects the AI-specific filters
+# into the Envoy pods that Envoy Gateway creates. That is why Envoy Gateway
+# (wave 1) has to exist first.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ai-gateway
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: mlops
+  source:
+    repoURL: docker.io/envoyproxy
+    chart: ai-gateway-helm
+    targetRevision: 1.1.0
+    helm:
+      releaseName: ai-gateway
+      values: |
+        controller:
+          replicas: 1
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits:   { memory: 384Mi }
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: envoy-ai-gateway-system
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff: { duration: 15s, factor: 2, maxDuration: 5m }

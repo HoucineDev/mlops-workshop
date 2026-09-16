@@ -1,0 +1,10 @@
+apiVersion: v2
+name: agent-router
+description: Envoy AI Gateway routes fronting the same KServe models LiteLLM serves
+type: application
+version: 0.1.0
+appVersion: "1.1.0"
+keywords: [envoy, ai-gateway, agent-router, kserve, openai]
+home: https://github.com/HoucineDev/mlops-workshop
+maintainers:
+  - name: HoucineDev

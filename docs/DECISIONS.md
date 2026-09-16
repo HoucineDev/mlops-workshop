@@ -515,3 +515,66 @@ KServe creates an HPA per predictor. With no metrics-server it sat at
 `cpu: <unknown>/80%` emitting `FailedGetResourceMetric` forever, and with
 `minReplicas == maxReplicas` it had nothing to do. Disabled with
 `serving.kserve.io/autoscalerClass: "none"`.
+
+---
+
+## 16. Agent Router (Envoy AI Gateway) alongside LiteLLM
+
+Staged in `gitops/staged/`, not deployed — see §16d.
+
+### The stack it actually needs
+
+| Wave | Component | Source |
+| --- | --- | --- |
+| 0 | Gateway API CRDs **v1.3.0** | vendored in `manifests/gateway-api/` |
+| 1 | Envoy Gateway v1.5.2 | `oci://docker.io/envoyproxy/gateway-helm` |
+| 2 | AI Gateway CRDs 1.1.0 | `oci://docker.io/envoyproxy/ai-gateway-crds-helm` |
+| 3 | AI Gateway controller 1.1.0 | `oci://docker.io/envoyproxy/ai-gateway-helm` |
+| 6 | Gateway + routes | `charts/agent-router` |
+
+All images are multi-arch (`linux/amd64,linux/arm64`), so this runs on Apple
+Silicon — unlike `kserve/huggingfaceserver` (§1).
+
+**Envoy Gateway does not ship the Gateway API CRDs.** `helm template gateway-helm`
+contains zero `gateway.networking.k8s.io` CRDs and the cluster had none, so the
+controller would never start. Pinned to **v1.3.0**, not the current v1.6.2,
+because Envoy Gateway v1.5.2's `go.mod` requires `sigs.k8s.io/gateway-api v1.3.x`.
+Vendored into the repo so the version is visible in Git and ArgoCD owns them.
+
+### How routing works
+
+Not obvious from the CRD names: the AI Gateway reads the **`model` field out of
+the OpenAI request body** and promotes it to an `x-ai-eg-model` header.
+`AIGatewayRoute` rules then match on that header. Clients send an ordinary
+OpenAI request; they never set the header themselves.
+
+`AIServiceBackend.spec.schema.name: OpenAI` declares the upstream already speaks
+OpenAI, so no translation is applied — correct for a llama.cpp server.
+
+### Sizing, given what happened today
+
+Upstream defaults would add ~512Mi of requests (Envoy Gateway controller 256Mi,
+Envoy data-plane 256Mi) plus 1Gi limits each. Both are trimmed, but **not
+removed**: the upstream example sets `resources: {}` "for local tests", and §15
+is the story of why that is a bad idea — a pod with no requests is BestEffort
+and is the first thing the kubelet kills.
+
+Two other non-defaults:
+
+- `ClientTrafficPolicy` raising `bufferLimit` to 50Mi. Envoy's default is 32kiB,
+  which truncates AI request and response bodies.
+- A stable `Service` aliasing the Envoy pods. Envoy Gateway names its own Service
+  with an unpredictable hash suffix, so an Ingress cannot reference it directly;
+  this selects the same pods by `gateway.envoyproxy.io/owning-gateway-*` labels.
+
+### 16d. Why these are staged, not in `gitops/apps/`
+
+The root app watches `gitops/apps/` only. An Application placed there is created
+immediately, and an Application created but not synced reports OutOfSync — which
+stalls the root app's wave ordering, because the health check requires Synced
+**and** Healthy (§10, §15). Staging them keeps the cluster untouched until it has
+the memory headroom to take three more pods. Deploy with:
+
+```bash
+git mv gitops/staged/0*-*.yaml gitops/staged/60-agent-router.yaml gitops/apps/
+```

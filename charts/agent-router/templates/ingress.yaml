@@ -1,0 +1,29 @@
+{{- if .Values.ingress.enabled }}
+# Envoy Gateway creates a Service for the Gateway named
+# envoy-<namespace>-<gateway>-<hash>. That hash is not knowable at template
+# time, so this Ingress targets a stable Service that selects the same pods —
+# see service.yaml.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Values.gatewayName }}
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: {{ .Values.ingress.proxyTimeout | quote }}
+    nginx.ingress.kubernetes.io/proxy-send-timeout: {{ .Values.ingress.proxyTimeout | quote }}
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  rules:
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .Values.gatewayName }}-envoy
+                port:
+                  number: {{ .Values.listener.port }}
+{{- end }}

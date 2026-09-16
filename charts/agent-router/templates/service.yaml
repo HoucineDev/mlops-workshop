@@ -1,0 +1,23 @@
+{{- if .Values.ingress.enabled }}
+# A stable alias for the Envoy data-plane pods.
+#
+# Envoy Gateway names its own Service with a hash suffix that cannot be
+# predicted in a template, so an Ingress cannot reference it directly. This
+# Service selects the same pods by the labels Envoy Gateway puts on them, giving
+# the Ingress a fixed name to point at.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.gatewayName }}-envoy
+  namespace: {{ .Release.Namespace }}
+spec:
+  type: ClusterIP
+  selector:
+    gateway.envoyproxy.io/owning-gateway-name: {{ .Values.gatewayName }}
+    gateway.envoyproxy.io/owning-gateway-namespace: {{ .Release.Namespace }}
+  ports:
+    - name: http
+      port: {{ .Values.listener.port }}
+      targetPort: {{ .Values.listener.port }}
+      protocol: TCP
+{{- end }}

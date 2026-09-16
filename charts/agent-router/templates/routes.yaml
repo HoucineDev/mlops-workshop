@@ -1,0 +1,55 @@
+# One AIGatewayRoute carrying a rule per model. The AI Gateway extracts the
+# `model` field from the OpenAI request body into the x-ai-eg-model header, and
+# these rules match on it — so clients send an ordinary OpenAI request and the
+# routing happens on the model name they asked for.
+apiVersion: aigateway.envoyproxy.io/v1beta1
+kind: AIGatewayRoute
+metadata:
+  name: {{ .Values.gatewayName }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  parentRefs:
+    - name: {{ .Values.gatewayName }}
+      kind: Gateway
+      group: gateway.networking.k8s.io
+  rules:
+    {{- range .Values.models }}
+    - matches:
+        - headers:
+            - type: Exact
+              name: x-ai-eg-model
+              value: {{ .name | quote }}
+      backendRefs:
+        - name: {{ $.Values.gatewayName }}-{{ .name }}
+    {{- end }}
+{{- range .Values.models }}
+---
+# schema.name: OpenAI tells the gateway the upstream speaks the OpenAI protocol,
+# so no request/response translation is applied — which is exactly right for a
+# llama.cpp server.
+apiVersion: aigateway.envoyproxy.io/v1beta1
+kind: AIServiceBackend
+metadata:
+  name: {{ $.Values.gatewayName }}-{{ .name }}
+  namespace: {{ $.Release.Namespace }}
+spec:
+  schema:
+    name: OpenAI
+  backendRef:
+    name: {{ $.Values.gatewayName }}-{{ .name }}
+    kind: Backend
+    group: gateway.envoyproxy.io
+---
+# Envoy Gateway's own Backend type: a plain upstream address. Points straight at
+# the KServe predictor Service, the same one LiteLLM uses.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: Backend
+metadata:
+  name: {{ $.Values.gatewayName }}-{{ .name }}
+  namespace: {{ $.Release.Namespace }}
+spec:
+  endpoints:
+    - fqdn:
+        hostname: {{ printf "%s.%s.svc.cluster.local" .service .namespace | quote }}
+        port: {{ .port }}
+{{- end }}

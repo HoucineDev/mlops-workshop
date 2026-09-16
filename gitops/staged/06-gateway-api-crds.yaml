@@ -1,0 +1,43 @@
+# Wave 0 — Gateway API CRDs.
+#
+# Envoy Gateway does NOT ship these: `helm template gateway-helm` contains zero
+# gateway.networking.k8s.io CRDs, and this cluster had none. Without them the
+# Envoy Gateway controller cannot start.
+#
+# Pinned to v1.3.0 because Envoy Gateway v1.5.2 builds against
+# sigs.k8s.io/gateway-api v1.3.x (see its go.mod). v1.6.2 is current upstream
+# but is newer than what this controller was tested against.
+#
+# Vendored into the repo rather than applied from a release URL so the version
+# is visible in Git and ArgoCD owns the objects.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: gateway-api-crds
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: mlops
+  source:
+    repoURL: https://github.com/HoucineDev/mlops-workshop.git
+    targetRevision: main
+    path: manifests/gateway-api
+    directory:
+      recurse: false
+      include: '*.yaml'
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  syncPolicy:
+    automated: { prune: false, selfHeal: true }   # never auto-prune CRDs
+    syncOptions:
+      - ServerSideApply=true
+      # Gateway API CRDs carry very large schemas and exceed the annotation
+      # limit that client-side apply relies on.
+      - Replace=true
+    retry:
+      limit: 5
+      backoff: { duration: 10s, factor: 2, maxDuration: 3m }

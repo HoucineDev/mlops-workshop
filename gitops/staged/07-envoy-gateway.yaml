@@ -1,0 +1,40 @@
+# Wave 1 — Envoy Gateway, the data plane Agent Router builds on.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: envoy-gateway
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: mlops
+  source:
+    repoURL: docker.io/envoyproxy
+    chart: gateway-helm
+    targetRevision: v1.5.2
+    helm:
+      releaseName: envoy-gateway
+      values: |
+        deployment:
+          replicas: 1
+          envoyGateway:
+            # Chart default is 256Mi request / 1Gi limit. Trimmed for a node
+            # that already runs two models, Postgres and the rest of the
+            # platform — but not removed: a pod with no requests is BestEffort
+            # and is the first thing the kubelet kills under pressure.
+            resources:
+              requests: { cpu: 50m, memory: 192Mi }
+              limits:   { memory: 512Mi }
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: envoy-gateway-system
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff: { duration: 15s, factor: 2, maxDuration: 5m }

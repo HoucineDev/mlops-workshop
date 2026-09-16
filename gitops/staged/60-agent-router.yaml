@@ -1,0 +1,39 @@
+# Wave 6 — the routes themselves: Gateway, AIGatewayRoute, AIServiceBackends and
+# Backends pointing at the SAME KServe predictors LiteLLM serves.
+#
+# Last wave: an AIGatewayRoute submitted before the AI Gateway controller's
+# admission webhook is running is rejected, and the Gateway needs Envoy Gateway
+# to already be watching.
+#
+# Deployed into the ai-gateway namespace, next to LiteLLM, so both gateways sit
+# side by side and front identical backends.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: agent-router
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "6"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: mlops
+  source:
+    repoURL: https://github.com/HoucineDev/mlops-workshop.git
+    targetRevision: main
+    path: charts/agent-router
+    helm:
+      releaseName: agent-router
+      valueFiles:
+        - values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ai-gateway
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff: { duration: 15s, factor: 2, maxDuration: 5m }
