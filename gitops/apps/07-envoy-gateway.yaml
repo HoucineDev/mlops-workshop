@@ -50,6 +50,46 @@ spec:
               #   processing destinations
               #   error: "Backend is disabled in Envoy Gateway configuration"
               enableBackend: true
+            # THE piece that makes Agent Router actually route.
+            #
+            # The AI Gateway controller runs an Envoy Gateway "extension server"
+            # on grpc/1063. Envoy Gateway calls it during xDS translation, and
+            # that is what injects the ext_proc filter which reads `model` from
+            # the request body and sets the x-ai-eg-model header the
+            # AIGatewayRoute matches on.
+            #
+            # Without this block everything looks healthy — Gateway Programmed,
+            # AIGatewayRoute/AIServiceBackend/Backend all Accepted, HTTPRoute
+            # generated, ext_proc sidecar injected and ready — and every request
+            # still falls through to the catch-all rule:
+            #
+            #   "No matching route found. It is likely because the model
+            #    specified in your request is not configured in the Gateway."
+            #
+            # because nothing ever sets the header. Sending
+            # `x-ai-eg-model: qwen3` by hand routes correctly, which is how this
+            # was isolated.
+            extensionManager:
+              hooks:
+                xdsTranslator:
+                  translation:
+                    listener:
+                      includeAll: true
+                    route:
+                      includeAll: true
+                    cluster:
+                      includeAll: true
+                    secret:
+                      includeAll: true
+                  post:
+                    - Translation
+                    - Cluster
+                    - Route
+                    - HTTPListener
+              service:
+                fqdn:
+                  hostname: ai-gateway-controller.envoy-ai-gateway-system.svc.cluster.local
+                  port: 1063
         deployment:
           replicas: 1
           envoyGateway:
