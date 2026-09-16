@@ -15,10 +15,26 @@ and blocks every later wave. That failure mode cost several hours; see
 Once the cluster has headroom (Docker Desktop raised to 12-16 GB):
 
 ```bash
-git mv gitops/staged/0*-*.yaml gitops/staged/60-agent-router.yaml gitops/apps/
-git commit -m "Deploy Envoy AI Gateway"
-git push
-make status
+cd ~/my-saas/mlops-workshop
+make agent-router-deploy
+```
+
+Or by hand — note this is ONE command. Pasting it across several lines makes
+`git mv` treat the last filename as the destination and fail with
+*"destination ... is not a directory"*:
+
+```bash
+git mv gitops/staged/0*.yaml gitops/staged/60-agent-router.yaml gitops/apps/ && \
+  git commit -m "Deploy Envoy AI Gateway" && git push
+```
+
+## Before deploying
+
+Check there is room. This adds roughly 700Mi across Envoy Gateway, the AI
+Gateway controller and one Envoy data-plane pod:
+
+```bash
+make headroom
 ```
 
 Order is handled by the sync-wave annotations already on each file.

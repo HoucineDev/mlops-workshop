@@ -197,6 +197,32 @@ test-predictor: ## Hit the KServe predictor directly, bypassing LiteLLM
 test: ## End-to-end chat completion through LiteLLM (run `make gateway` first)
 	@./scripts/smoke-test.sh
 
+##@ Agent Router
+.PHONY: headroom
+headroom: ## Real memory available to the cluster (NOT what kubectl reports)
+	@echo "Docker VM — the constraint kubectl cannot see:"
+	@docker exec $(CLUSTER)-control-plane sh -c 'free -m' | sed -n '1,3p' | sed 's/^/  /'
+	@echo
+	@echo "Containers sharing that VM:"
+	@docker stats --no-stream --format '  {{.MemUsage}}\t{{.Name}}' | sort -h -r | head -8
+	@echo
+	@echo "Agent Router needs roughly 700Mi. Under ~1500MB available, raise"
+	@echo "Docker Desktop memory before deploying (Settings > Resources)."
+
+.PHONY: agent-router-deploy
+agent-router-deploy: ## Move the staged Agent Router apps into gitops/apps and push
+	@test -f gitops/staged/60-agent-router.yaml || { echo "already deployed"; exit 1; }
+	git mv gitops/staged/06-gateway-api-crds.yaml gitops/staged/07-envoy-gateway.yaml \
+	       gitops/staged/08-ai-gateway-crds.yaml gitops/staged/09-ai-gateway.yaml \
+	       gitops/staged/60-agent-router.yaml gitops/apps/
+	git commit -m "Deploy Envoy AI Gateway (Agent Router)"
+	git push
+	@echo "✅ pushed. ArgoCD picks it up on its next refresh; watch with: make status"
+
+.PHONY: agent-router-test
+agent-router-test: ## Same prompt through LiteLLM and through Agent Router
+	@./scripts/compare-gateways.sh
+
 ##@ Cluster
 .PHONY: cluster-recreate
 cluster-recreate: ## DESTRUCTIVE. Recreate the kind cluster with host ports 80/443 mapped
