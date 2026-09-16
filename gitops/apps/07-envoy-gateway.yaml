@@ -38,6 +38,18 @@ spec:
     helm:
       releaseName: envoy-gateway
       values: |
+        config:
+          envoyGateway:
+            extensionApis:
+              # The Backend API (gateway.envoyproxy.io/v1alpha1 Backend) is
+              # opt-in. Agent Router's AIServiceBackend points at a Backend to
+              # reach an arbitrary upstream, so without this every route is
+              # answered with a 500 and the controller logs:
+              #
+              #   setting 500 direct response in routes due to errors in
+              #   processing destinations
+              #   error: "Backend is disabled in Envoy Gateway configuration"
+              enableBackend: true
         deployment:
           replicas: 1
           envoyGateway:
