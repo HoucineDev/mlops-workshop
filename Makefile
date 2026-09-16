@@ -199,15 +199,25 @@ test: ## End-to-end chat completion through LiteLLM (run `make gateway` first)
 
 ##@ Agent Router
 .PHONY: headroom
-headroom: ## Real memory available to the cluster (NOT what kubectl reports)
+headroom: ## GO/NO-GO for deploying Agent Router, from the VM's real free memory
 	@echo "Docker VM — the constraint kubectl cannot see:"
 	@docker exec $(CLUSTER)-control-plane sh -c 'free -m' | sed -n '1,3p' | sed 's/^/  /'
 	@echo
 	@echo "Containers sharing that VM:"
 	@docker stats --no-stream --format '  {{.MemUsage}}\t{{.Name}}' | sort -h -r | head -8
 	@echo
-	@echo "Agent Router needs roughly 700Mi. Under ~1500MB available, raise"
-	@echo "Docker Desktop memory before deploying (Settings > Resources)."
+	@avail=$$(docker exec $(CLUSTER)-control-plane sh -c 'free -m' | awk '/^Mem:/{print $$7}'); \
+	 swapfree=$$(docker exec $(CLUSTER)-control-plane sh -c 'free -m' | awk '/^Swap:/{print $$4}'); \
+	 echo "available: $${avail}MB   swap free: $${swapfree}MB   Agent Router needs ~700MB"; \
+	 if [ "$${avail}" -lt 1200 ]; then \
+	   echo "  ✗ NO-GO — raise Docker Desktop memory (Settings > Resources) before deploying."; \
+	 elif [ "$${swapfree}" -lt 200 ]; then \
+	   echo "  ✗ NO-GO — swap is nearly exhausted; the VM is thrashing."; \
+	 elif [ "$${avail}" -lt 2000 ]; then \
+	   echo "  ~ TIGHT — it will probably fit. Deploy only if you can watch it."; \
+	 else \
+	   echo "  ✓ GO — run: make agent-router-deploy"; \
+	 fi
 
 .PHONY: agent-router-deploy
 agent-router-deploy: ## Move the staged Agent Router apps into gitops/apps and push
