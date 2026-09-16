@@ -1,7 +1,25 @@
 # Wave 1 — Envoy Gateway, the data plane Agent Router builds on.
 #
-# v1.8.1 is the floor: Agent Router v1.1 requires Envoy Gateway 1.8.1+. An
-# earlier revision pinned v1.5.2, below that floor.
+# v1.8.1 is the floor: Agent Router v1.1 requires Envoy Gateway 1.8.1+.
+#
+# This chart also OWNS the Gateway API CRDs. It ships bundle v1.5.1 on the
+# experimental channel in its crds/ directory, which is exactly the Gateway API
+# 1.5 that Agent Router v1.1 requires — so there is no separate CRD Application
+# here, and there must not be one.
+#
+# An earlier revision did add one, installing the standard channel. The two
+# Applications then fought over the same objects and neither could reach Synced:
+#
+#   gateway.networking.k8s.io/channel: standard   (the separate app)
+#   gateway.networking.k8s.io/channel: experimental (this chart)
+#   argocd.argoproj.io/tracking-id: gateway-api-crds:...  vs  envoy-gateway:...
+#
+# That mistake came from checking `helm template gateway-helm | grep` for the
+# CRDs and finding none — `helm template` omits a chart's crds/ directory unless
+# --include-crds is passed, while ArgoCD always applies it. To inspect what
+# ArgoCD will actually install, always use:
+#
+#   helm template <chart> --include-crds
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
