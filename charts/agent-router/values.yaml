@@ -49,6 +49,14 @@ models:
     namespace: models
     port: 80
 
+# -- Values the AIGatewayRoute admission webhook fills in anyway. Declaring them
+# keeps the stored object identical to the rendered chart, so the Application can
+# actually reach Synced without an ignoreDifferences block.
+routeDefaults:
+  weight: 1
+  priority: 0
+  modelsOwnedBy: Envoy AI Gateway
+
 ingress:
   # -- Off: Envoy Gateway creates the proxy Service in envoy-gateway-system, and
   # an Ingress can only target a Service in its own namespace. See the note in

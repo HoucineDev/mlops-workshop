@@ -21,6 +21,15 @@ spec:
               value: {{ .name | quote }}
       backendRefs:
         - name: {{ $.Values.gatewayName }}-{{ .name }}
+          # weight and priority are defaulted by the admission webhook, and
+          # modelsOwnedBy below with them. Declared explicitly so the stored
+          # object matches what Helm renders — otherwise the Application is
+          # OutOfSync on every refresh while `argocd app diff` prints nothing,
+          # and a child app that never reaches Synced stalls the root app's wave
+          # ordering (DECISIONS §10, §15).
+          weight: {{ $.Values.routeDefaults.weight }}
+          priority: {{ $.Values.routeDefaults.priority }}
+      modelsOwnedBy: {{ $.Values.routeDefaults.modelsOwnedBy | quote }}
     {{- end }}
 {{- range .Values.models }}
 ---
