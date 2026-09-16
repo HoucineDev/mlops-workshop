@@ -16,8 +16,14 @@ MASTER_KEY="$(kubectl get secret -n "$GATEWAY_NS" litellm-gateway-masterkey \
   -o jsonpath='{.data.masterkey}' 2>/dev/null | base64 -d || echo "")"
 [[ -z "$MASTER_KEY" ]] && { echo "could not read the LiteLLM master key" >&2; exit 1; }
 
-if ! kubectl get svc -n "$GATEWAY_NS" agent-router-envoy >/dev/null 2>&1; then
-  echo "Agent Router is not deployed yet (no agent-router-envoy Service)." >&2
+# Envoy Gateway creates the proxy Service in its own namespace with a hashed
+# name, so discover it by the owning-gateway label rather than guessing.
+ENVOY_NS="${ENVOY_NS:-envoy-gateway-system}"
+ENVOY_SVC="$(kubectl get svc -n "$ENVOY_NS" \
+  -l gateway.envoyproxy.io/owning-gateway-name=agent-router \
+  -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")"
+if [[ -z "$ENVOY_SVC" ]]; then
+  echo "Agent Router is not deployed yet (no Envoy Service for the gateway)." >&2
   echo "Deploy it with: make agent-router-deploy" >&2
   exit 1
 fi
@@ -47,7 +53,7 @@ PY
 
 kubectl port-forward -n "$GATEWAY_NS" svc/litellm-gateway 14000:4000 >/dev/null 2>&1 &
 PF1=$!
-kubectl port-forward -n "$GATEWAY_NS" svc/agent-router-envoy 14001:80 >/dev/null 2>&1 &
+kubectl port-forward -n "$ENVOY_NS" "svc/${ENVOY_SVC}" 14001:80 >/dev/null 2>&1 &
 PF2=$!
 trap 'kill "$PF1" "$PF2" 2>/dev/null || true' EXIT
 

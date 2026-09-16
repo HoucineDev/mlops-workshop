@@ -50,10 +50,11 @@ models:
     port: 80
 
 ingress:
-  # -- Publish the gateway through the existing ingress-nginx so it is reachable
-  # at the same kind of hostname as LiteLLM. Envoy Gateway creates its own
-  # Service for the Gateway; this just points nginx at it.
-  enabled: true
+  # -- Off: Envoy Gateway creates the proxy Service in envoy-gateway-system, and
+  # an Ingress can only target a Service in its own namespace. See the note in
+  # templates/ingress.yaml. Use a port-forward, or add an Ingress in
+  # envoy-gateway-system.
+  enabled: false
   className: nginx
   host: agent-router.localtest.me
   proxyTimeout: 600

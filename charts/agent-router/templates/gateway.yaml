@@ -43,6 +43,13 @@ spec:
   provider:
     type: Kubernetes
     kubernetes:
+      envoyService:
+        # ClusterIP, not the default LoadBalancer. kind has no cloud provider,
+        # so a LoadBalancer Service sits <pending> forever and the Gateway never
+        # leaves Programmed=False / AddressNotAssigned — the same trap as
+        # ingress-nginx (DECISIONS §12). Traffic reaches it through
+        # ingress-nginx or a port-forward, so no external IP is wanted.
+        type: ClusterIP
       envoyDeployment:
         replicas: 1
         container:

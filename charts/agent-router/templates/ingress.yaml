@@ -1,29 +1,25 @@
 {{- if .Values.ingress.enabled }}
-# Envoy Gateway creates a Service for the Gateway named
-# envoy-<namespace>-<gateway>-<hash>. That hash is not knowable at template
-# time, so this Ingress targets a stable Service that selects the same pods —
-# see service.yaml.
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: {{ .Values.gatewayName }}
-  namespace: {{ .Release.Namespace }}
-  annotations:
-    nginx.ingress.kubernetes.io/proxy-read-timeout: {{ .Values.ingress.proxyTimeout | quote }}
-    nginx.ingress.kubernetes.io/proxy-send-timeout: {{ .Values.ingress.proxyTimeout | quote }}
-    nginx.ingress.kubernetes.io/proxy-buffering: "off"
-    nginx.ingress.kubernetes.io/proxy-body-size: "0"
-spec:
-  ingressClassName: {{ .Values.ingress.className }}
-  rules:
-    - host: {{ .Values.ingress.host | quote }}
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: {{ .Values.gatewayName }}-envoy
-                port:
-                  number: {{ .Values.listener.port }}
+# NOTE: disabled by default (ingress.enabled=false).
+#
+# Envoy Gateway creates the proxy Deployment and Service in ITS OWN namespace
+# (envoy-gateway-system), not in the Gateway's namespace, and names the Service
+# envoy-<gw-ns>-<gw-name>-<hash>. An Ingress can only reference a Service in its
+# own namespace, and the hash is not knowable at template time — so a plain
+# Ingress here cannot reach it.
+#
+# An earlier revision tried a stable alias Service in this namespace selecting
+# the proxy pods by their gateway.envoyproxy.io/owning-gateway-* labels. That
+# cannot work either: a Service only ever selects pods in its own namespace, so
+# it had zero endpoints.
+#
+# Reach the gateway with a port-forward instead (scripts/compare-gateways.sh
+# discovers the Service by label):
+#
+#   kubectl port-forward -n envoy-gateway-system \
+#     svc/$(kubectl get svc -n envoy-gateway-system \
+#       -l gateway.envoyproxy.io/owning-gateway-name={{ .Values.gatewayName }} \
+#       -o jsonpath='{.items[0].metadata.name}') 8081:80
+#
+# To publish it properly, put an Ingress in envoy-gateway-system referencing
+# that Service, or give the Gateway its own listener on a mapped host port.
 {{- end }}
