@@ -23,6 +23,12 @@ inferenceService:
   minReplicas: 1
   maxReplicas: 1
 
+  autoscaling:
+    # Requires metrics-server. Off by default because this cluster has none, and
+    # a broken HPA is worse than no HPA: it logs errors forever and tells you
+    # nothing.
+    enabled: false
+
   # -- Extra annotations merged onto the InferenceService.
   annotations: {}
   labels: {}

@@ -13,6 +13,14 @@ metadata:
     # it KServe falls back to the cluster default in the
     # inferenceservice-config ConfigMap, which ships as Knative.
     serving.kserve.io/deploymentMode: {{ .Values.inferenceService.deploymentMode }}
+    {{- if not .Values.inferenceService.autoscaling.enabled }}
+    # KServe creates an HPA per predictor by default. This cluster has no
+    # metrics-server, so that HPA can never read a metric — it sits at
+    # "cpu: <unknown>/80%" and emits FailedGetResourceMetric every few seconds
+    # forever. With minReplicas == maxReplicas there is nothing for it to do
+    # anyway, so turn it off rather than leave a permanently broken object.
+    serving.kserve.io/autoscalerClass: "none"
+    {{- end }}
     {{- with .Values.inferenceService.annotations }}
     {{- toYaml . | nindent 4 }}
     {{- end }}

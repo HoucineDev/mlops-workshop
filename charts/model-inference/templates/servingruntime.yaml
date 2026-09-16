@@ -48,20 +48,26 @@ spec:
         {{- toYaml .Values.securityContext | nindent 8 }}
       # llama-server answers 503 on /health until the GGUF is fully mapped into
       # memory, so this is a true model-load gate rather than a process check.
+      # Timeouts sized for a contended node, not a quiet one. llama.cpp blocks
+      # the HTTP thread while generating, so a probe issued mid-request can
+      # legitimately take seconds — killing the pod for that would drop the
+      # in-flight request and restart a model that is working fine.
       readinessProbe:
         httpGet:
           path: /health
           port: {{ .Values.servingRuntime.port }}
         initialDelaySeconds: 5
-        periodSeconds: 5
-        timeoutSeconds: 3
+        periodSeconds: 10
+        timeoutSeconds: 10
+        failureThreshold: 6
       livenessProbe:
         httpGet:
           path: /health
           port: {{ .Values.servingRuntime.port }}
         initialDelaySeconds: 30
-        periodSeconds: 20
-        timeoutSeconds: 5
+        periodSeconds: 30
+        timeoutSeconds: 15
+        failureThreshold: 6
       startupProbe:
         httpGet:
           path: /health
