@@ -436,3 +436,82 @@ One gateway, two models, switched by the `model` field alone:
 tiny-llm -> http://tiny-llm-predictor.models.svc.cluster.local/v1
 qwen3    -> http://qwen3-predictor.models.svc.cluster.local/v1
 ```
+
+---
+
+## 15. The constraint was never inside the cluster
+
+Deploying a second model made the whole cluster unstable: the API server returned
+`net/http: TLS handshake timeout`, ArgoCD's repo-server and application-controller
+were OOMKilled into CrashLoopBackOff, and cert-manager, ingress-nginx, KServe and
+LiteLLM all restarted repeatedly. Two real bugs were found and fixed on the way
+(below), but neither was the cause.
+
+### What `kubectl` said, and why it was wrong
+
+```
+$ kubectl describe node argocd-control-plane
+MemoryPressure=False  KubeletHasSufficientMemory
+Allocated resources:  memory 3558Mi (45%)
+```
+
+Healthy, by every Kubernetes-level measure. But from inside the node:
+
+```
+$ docker exec argocd-control-plane free -m
+              total   used   free   available
+Mem:           7837   7786     47          51
+Swap:          1023   1023      0
+```
+
+**51 MB available and swap 100% exhausted.** The kubelet reports on its own
+cgroup; `/proc/meminfo` is not namespaced, so it shows the whole Docker Desktop
+VM. Every Kubernetes-level diagnostic was blind to the actual problem.
+
+The VM was shared with unrelated projects:
+
+| container | MB |
+| --- | --- |
+| `zulip-local-zulip-1` | **2867** |
+| `argocd-control-plane` (the entire cluster) | 2724 |
+| `rag-neo4j` | 508 |
+| qdrant + 9 others | ~416 |
+
+One unrelated container used more memory than the whole Kubernetes cluster.
+Stopping the Zulip stack took available memory from 51 MB to 2859 MB and swap
+from full to 19% — and the cluster stopped restarting.
+
+**The lesson:** on Docker Desktop, `kubectl describe node` cannot see the
+constraint that matters. Check `docker exec <node> free -m` and
+`docker stats --no-stream` before tuning anything inside the cluster.
+
+### Two genuine bugs found along the way
+
+**ArgoCD ran as BestEffort.** The argo-cd chart ships `resources: {}`, so all six
+pods had no requests and were QoS class BestEffort — first in the kubelet's kill
+order. Every workload had requests and was Burstable, so under pressure the
+control plane died while the models ran on. And a dead repo-server is silent:
+no Application can regenerate manifests, so everything freezes at its last synced
+revision. The LiteLLM gateway sat pinned to an old commit and never learned about
+the second model, which looked like a chart bug. Fixed in
+`bootstrap/argocd-values.yaml`; `make qos` shows the kill order.
+
+**A probe-timeout cascade.** Kubernetes defaults probes to a 1s timeout. Under CPU
+contention that is not survivable:
+
+```
+Liveness probe failed: "pg_isready -U litellm -d litellm" timed out after 1s
+Liveness probe failed: Get "http://.../healthz": context deadline exceeded
+Container failed liveness probe, will be restarted
+```
+
+A probe times out, the kubelet kills a *healthy* container, the restart burns
+more CPU, the next probe times out. Every platform pod entered it at once. Probes
+in these charts now use explicit `timeoutSeconds` (5–15s) and `failureThreshold: 6`.
+
+### Also removed: a permanently broken HPA
+
+KServe creates an HPA per predictor. With no metrics-server it sat at
+`cpu: <unknown>/80%` emitting `FailedGetResourceMetric` forever, and with
+`minReplicas == maxReplicas` it had nothing to do. Disabled with
+`serving.kserve.io/autoscalerClass: "none"`.
