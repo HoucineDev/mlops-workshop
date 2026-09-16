@@ -1,7 +1,17 @@
 # AppProject: the blast radius for everything this workshop deploys.
 #
-# Applied ONCE by hand (`make bootstrap`). Everything after this point is
-# created by ArgoCD from Git — that is the whole bootstrap-then-GitOps pattern.
+# Applied by hand (`make bootstrap`, or `make project` on its own). Everything
+# after this point is created by ArgoCD from Git — the bootstrap-then-GitOps
+# pattern.
+#
+# IMPORTANT: this file is NOT GitOps-managed. It is what authorises the root app,
+# so it must exist before anything can sync, which means ArgoCD cannot own it.
+# Editing it here changes nothing until `make project` is run. Adding a chart
+# repo or namespace below and forgetting that step produces an error on the
+# *Application*, which sends you looking in the wrong file:
+#
+#   InvalidSpecError: application repo docker.io/envoyproxy is not permitted
+#   in project 'mlops'
 apiVersion: argoproj.io/v1alpha1
 kind: AppProject
 metadata:

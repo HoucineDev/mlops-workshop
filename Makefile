@@ -129,8 +129,7 @@ NS:.metadata.namespace,POD:.metadata.name,QOS:.status.qosClass \
 	  --sort-by=.status.qosClass | grep -vE 'kube-system' | head -30
 
 .PHONY: bootstrap
-bootstrap: ## Apply the AppProject + root app-of-apps (the only imperative step)
-	kubectl apply -f gitops/bootstrap/project.yaml
+bootstrap: project ## Apply the AppProject + root app-of-apps (the only imperative step)
 	kubectl apply -f gitops/bootstrap/root-app.yaml
 	@echo "✅ root app applied — ArgoCD owns everything from here. Watch: make status"
 
@@ -196,6 +195,17 @@ test-predictor: ## Hit the KServe predictor directly, bypassing LiteLLM
 .PHONY: test
 test: ## End-to-end chat completion through LiteLLM (run `make gateway` first)
 	@./scripts/smoke-test.sh
+
+.PHONY: project
+project: ## Re-apply the AppProject. REQUIRED after editing it — it is not GitOps-managed.
+	@# The AppProject is the one object ArgoCD cannot manage for us: it is what
+	@# authorises the root app, so it has to exist before anything syncs. That
+	@# means edits to gitops/bootstrap/project.yaml do NOT reach the cluster on
+	@# their own, and an Application using a repo or namespace the live project
+	@# does not list fails with, misleadingly, an InvalidSpecError on the
+	@# Application rather than anything pointing at the project:
+	@#   application repo docker.io/envoyproxy is not permitted in project 'mlops'
+	kubectl apply -f gitops/bootstrap/project.yaml
 
 ##@ Agent Router
 .PHONY: headroom
