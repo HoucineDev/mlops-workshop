@@ -672,3 +672,57 @@ the path works, nothing more.
 **Scope:** this is the data plane only. No virtual keys, budgets, guardrails or
 admin UI — the five bricks and 13–18 person-weeks in the study's
 "ce qu'il faudrait construire autour d'Agent Router".
+
+---
+
+## 18. `/v1/models` is not served by Agent Router in this setup
+
+**Symptom.** `GET /v1/models` through Agent Router returns the catch-all:
+
+```
+No matching route found. It is likely because the model specified in your
+request is not configured in the Gateway.
+```
+
+LiteLLM answers it normally. This matters for any client that probes
+`/v1/models` on startup.
+
+**Why.** `AIGatewayRoute` rules match on `x-ai-eg-model`, which the ext_proc sets
+from the `model` field in the request *body*. A `/v1/models` request has no body
+and no model, so it matches no rule and falls through to the generated catch-all.
+`AIGatewayRouteRule.matches` supports **`headers` only** — there is no path
+matcher — and a rule with no `matches` at all is ignored by the controller
+(verified: the generated HTTPRoute was unchanged).
+
+**A workaround that looks right and is not.** Adding a plain HTTPRoute matching
+path `/v1/models` and pointing at one of the Backends does return 200 — with the
+*backend's* model list:
+
+```json
+{"data":[{"id":"qwen3-0.6b", ...}]}
+```
+
+Those are llama.cpp's own IDs, not the gateway's (`qwen3`, `tiny-llm`). A client
+reading that list and then requesting `qwen3-0.6b` gets "No matching route
+found", because the gateway routes on `qwen3`. It advertises names it cannot
+serve, which is worse than a clean error — so it was removed, not shipped.
+
+The cause is visible in the routes: the AIGatewayRoute-generated HTTPRoute
+carries an AI Gateway filter,
+
+```
+filters: [{extensionRef: {kind: HTTPRouteFilter,
+                          name: ai-eg-host-rewrite-agent-router}}]
+```
+
+while a hand-written HTTPRoute has none, so AI Gateway processing never applies
+and the request is proxied verbatim. The ext_proc does register a `/v1/models`
+processor at startup and the filter-config bundle does contain both model names
+with `OwnedBy: Envoy AI Gateway` — so the data is there; the request simply never
+reaches that handler.
+
+**Status: unresolved.** Options not pursued: an `EnvoyPatchPolicy` to attach the
+filter to an extra route, or upstream guidance on the supported pattern. Until
+then, treat Agent Router as serving inference endpoints only, and read the model
+list from Git (`charts/agent-router/values.yaml`) or
+`make agent-router-models`.
