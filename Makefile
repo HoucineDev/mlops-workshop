@@ -239,6 +239,24 @@ agent-router-deploy: ## Move the staged Agent Router apps into gitops/apps and p
 	git push
 	@echo "✅ pushed. ArgoCD picks it up on its next refresh; watch with: make status"
 
+.PHONY: agent-router
+agent-router: ## Port-forward Agent Router to localhost:8081
+	@# Envoy Gateway names the proxy Service envoy-<gw-ns>-<gw>-<hash> and puts
+	@# it in its OWN namespace, so the name is discovered by label rather than
+	@# hardcoded.
+	@svc=$$(kubectl get svc -n envoy-gateway-system \
+	  -l gateway.envoyproxy.io/owning-gateway-name=agent-router \
+	  -o jsonpath='{.items[0].metadata.name}'); \
+	 test -n "$$svc" || { echo "Agent Router is not deployed"; exit 1; }; \
+	 echo "Agent Router -> http://localhost:8081/v1   (no auth configured)"; \
+	 echo "models: tiny-llm, qwen3"; \
+	 kubectl port-forward -n envoy-gateway-system "svc/$$svc" 8081:80
+
+.PHONY: agent-router-models
+agent-router-models: ## List the models Agent Router is configured to route
+	@kubectl get aigatewayroute agent-router -n ai-gateway \
+	  -o jsonpath='{range .spec.rules[*]}{.matches[0].headers[0].value}{"  -> "}{.backendRefs[0].name}{"\n"}{end}'
+
 .PHONY: agent-router-test
 agent-router-test: ## Same prompt through LiteLLM and through Agent Router
 	@./scripts/compare-gateways.sh
